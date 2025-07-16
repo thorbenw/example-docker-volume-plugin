@@ -1,0 +1,41 @@
+{
+  "description": "Example volume plugin for Docker",
+  "documentation": "https://docs.docker.com/engine/extend/plugins/",
+  "entrypoint": [
+    "/example-docker-volume-plugin"
+  ],
+  "env": [
+    {
+      "name": "LOG_LEVEL",
+      "settable": [
+        "value"
+      ],
+      "value": "debug"
+    },
+    {
+      "name": "LOG_SOURCE",
+      "settable": [
+        "value"
+      ],
+      "value": "false"
+    },
+    {
+      "name": "RUN_BINARY",
+      "settable": [
+        "value"
+      ],
+      "value": "/examplemount"
+    }
+  ],
+  "PropagatedMount": "/data",
+  "network": {
+    "type": "host"
+  },
+  "interface": {
+    "types": ["docker.volumedriver/1.0"],
+    "socket": "example.sock"
+  },
+  "linux": {
+    "capabilities": ["CAP_SYS_ADMIN"]
+  }
+}

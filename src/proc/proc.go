@@ -1,0 +1,559 @@
+//go:build linux
+
+package proc
+
+// #cgo LDFLAGS: -l:libc.a
+// #include <unistd.h>
+//import "C"
+
+import (
+	"bufio"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/keebits/example-docker-volume-plugin/semver"
+	"github.com/keebits/example-docker-volume-plugin/utils"
+)
+
+type ProcessStatus string
+
+const (
+	Running  ProcessStatus = "R"
+	Sleeping ProcessStatus = "S"
+	Waiting  ProcessStatus = "D"
+	Zombie   ProcessStatus = "Z"
+	Stopped  ProcessStatus = "T"
+	Tracing  ProcessStatus = "t"
+	Paging   ProcessStatus = "W"
+	Dead     ProcessStatus = "X"
+	dead     ProcessStatus = "x"
+	Wakekill ProcessStatus = "K"
+	Waking   ProcessStatus = "W"
+	Parked   ProcessStatus = "P"
+	Idle     ProcessStatus = "I"
+)
+
+var ProcessStatusNames = map[ProcessStatus]string{}
+
+func (ps ProcessStatus) String() string {
+	if processStatusName, ok := ProcessStatusNames[ps]; ok {
+		return processStatusName
+	}
+
+	return string(ps)
+}
+
+type IProcessInfo interface {
+	UniqueId() string
+}
+
+type ProcessInfo struct {
+	Pid       uint64
+	Comm      string
+	State     ProcessStatus
+	StartTime time.Time
+	Cmdline   []string
+}
+
+func (pi ProcessInfo) UniqueId() (uniqueId string) {
+	bytes_pid := make([]byte, 8)
+	binary.BigEndian.PutUint64(bytes_pid, pi.Pid)
+
+	bytes_stt := make([]byte, 8)
+	unix_nano := uint64(pi.StartTime.UnixNano())
+	binary.BigEndian.PutUint64(bytes_stt, unix_nano)
+
+	uniqueId = fmt.Sprintf("%x", slices.Concat(bytes_pid, bytes_stt))
+
+	return
+}
+
+const (
+	DEFAULT_PROC_PATH         = "/proc"
+	DEFAULT_PROC_STAT_NAME    = "stat"
+	DEFAULT_PROC_CMDLINE_NAME = "cmdline"
+	TASK_COMM_LEN             = 16
+)
+
+var (
+	// Boot time, in seconds since the Epoch, 1970-01-01T00:00:00+0000 (UTC).
+	//
+	// See https://man7.org/linux/man-pages/man5/proc_stat.5.html
+	BTime time.Time
+	// The number of clock ticks per second the kernel is configured to.
+	//
+	// See https://stackoverflow.com/questions/19919881/sysconf-sc-clk-tck-what-does-it-return
+	ClockTicksPerSecond = 100
+	// Tells if init() for this package (proc) has been run.
+	//
+	// If init() has been skipped, NoInit is set to true.
+	NoInit = false
+	//
+	Release *semver.VersionInfo
+	// Root path for all subsequent procfs based operations.
+	ProcPath = DEFAULT_PROC_PATH
+	// Name of `stat` file(s) for all subsequent procfs based operations.
+	ProcStatName = DEFAULT_PROC_STAT_NAME
+	// Name of `cmdline` file(s) for all subsequent procfs based operations.
+	ProcCmdlineName = DEFAULT_PROC_CMDLINE_NAME
+	// Unsigned(!) integer fields in /proc/<pid>/stat .
+	//
+	// See https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html
+	procPidStatsUInt = map[string]int{
+		"pid":       1,
+		"starttime": 22,
+	}
+	// String fields in /proc/<pid>/stat .
+	//
+	// See https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html
+	procPidStatsString = map[string]int{
+		"comm":  2,
+		"state": 3,
+	}
+)
+
+func init() {
+	if !NoInit {
+		if err := Reset(); err != nil {
+			panic(err)
+		}
+	}
+}
+
+func loadProcStat() (fail error) {
+	path := filepath.Join(ProcPath, ProcStatName)
+	file, err := os.OpenFile(path, os.O_RDONLY, os.FileMode(0))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := file.Close(); (err != nil) && (fail == nil) {
+			fail = err
+		}
+	}()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if a, t, e := bufio.ScanWords(line, false); e == nil {
+			key := string(t)
+			switch key {
+			case "btime":
+				if btime, err := strconv.ParseInt(string(line[a:]), 10, 64); err != nil {
+					fail = err
+				} else {
+					local := time.FixedZone("Local", 2*60*60)
+					BTime = time.Unix(btime, 0).In(local)
+				}
+			default:
+				continue
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	return
+}
+
+func loadUname() error {
+	var uname syscall.Utsname
+	var err error = syscall.Uname(&uname)
+	if err != nil {
+		return err
+	}
+
+	Release, err = semver.Parse(utils.Int8ToStr(uname.Release[:]))
+	if err != nil {
+		return err
+	}
+
+	/*
+	 	logger.Debug(utils.Int8ToStr(uname.Domainname[:]))
+	   	logger.Debug(utils.Int8ToStr(uname.Machine[:]))
+	   	logger.Debug(utils.Int8ToStr(uname.Nodename[:]))
+	   	logger.Debug(utils.Int8ToStr(uname.Release[:]))
+	   	logger.Debug(utils.Int8ToStr(uname.Sysname[:]))
+	   	logger.Debug(utils.Int8ToStr(uname.Version[:]))
+	*/
+
+	return nil
+}
+
+func loadProcessStatusNames(release *semver.VersionInfo) error {
+	if nil == release {
+		release = Release
+	}
+
+	linux_2_6_0, err := semver.Parse("2.6.0")
+	if err != nil {
+		return err
+	}
+
+	linux_2_6_33, err := semver.Parse("2.6.33")
+	if err != nil {
+		return err
+	}
+
+	linux_3_9, err := semver.Parse("3.9")
+	if err != nil {
+		return err
+	}
+
+	linux_3_13, err := semver.Parse("3.13")
+	if err != nil {
+		return err
+	}
+
+	linux_4_14, err := semver.Parse("4.14")
+	if err != nil {
+		return err
+	}
+
+	type addState struct {
+		state ProcessStatus
+		text  string
+	}
+	addNew := func(add ...addState) error {
+		for _, ad := range add {
+			if _, ok := ProcessStatusNames[ad.state]; ok {
+				return fmt.Errorf("process status %s already exists in ProcessStatusNames", ad.state)
+			}
+
+			ProcessStatusNames[ad.state] = ad.text
+		}
+		return nil
+	}
+
+	ProcessStatusNames = make(map[ProcessStatus]string, 13)
+
+	if err := addNew(
+		addState{Running, "Running"},
+		addState{Sleeping, "Sleeping in an interruptible wait"},
+		addState{Waiting, "Waiting in uninterruptible disk sleep"},
+		addState{Zombie, "Zombie"},
+		addState{Stopped, "Stopped (on a signal) or (before Linux 2.6.33) trace stopped"},
+	); err != nil {
+		return err
+	}
+
+	if semver.Compare(*release, *linux_2_6_33) >= 0 {
+		if err := addNew(
+			addState{Tracing, "Tracing stop (Linux 2.6.33 onward)"},
+		); err != nil {
+			return err
+		}
+	}
+	if semver.Compare(*release, *linux_2_6_0) < 0 {
+		if err := addNew(
+			addState{Paging, "Paging (only before Linux 2.6.0)"},
+		); err != nil {
+			return err
+		}
+	}
+	if semver.Compare(*release, *linux_2_6_0) >= 0 {
+		if err := addNew(
+			addState{Dead, "Dead (from Linux 2.6.0 onward)"},
+		); err != nil {
+			return err
+		}
+	}
+	if semver.Compare(*release, *linux_2_6_33) >= 0 && semver.Compare(*release, *linux_3_13) <= 0 {
+		if err := addNew(
+			addState{dead, "Dead (Linux 2.6.33 to 3.13 only)"},
+			addState{Wakekill, "Wakekill (Linux 2.6.33 to 3.13 only)"},
+			addState{Waking, "Waking (Linux 2.6.33 to 3.13 only)"},
+		); err != nil {
+			return err
+		}
+	}
+	if semver.Compare(*release, *linux_3_9) >= 0 && semver.Compare(*release, *linux_3_13) <= 0 {
+		if err := addNew(
+			addState{Parked, "Parked (Linux 3.9 to 3.13 only)"},
+		); err != nil {
+			return err
+		}
+	}
+	if semver.Compare(*release, *linux_4_14) >= 0 {
+		if err := addNew(
+			addState{Idle, "Idle (Linux 4.14 onward)"},
+		); err != nil {
+			return err
+		}
+	}
+	/*
+		ProcessStatusNames[] =
+
+		Running:  "Running",
+		Sleeping: "Sleeping in an interruptible wait",
+		Waiting:  "Waiting in uninterruptible disk sleep",
+		Zombie:   "Zombie",
+		Stopped:  "Stopped (on a signal) or (before Linux 2.6.33) trace stopped",
+		Tracing:  "Tracing stop (Linux 2.6.33 onward)",
+		Paging:   "Paging (only before Linux 2.6.0)",
+		Dead:     "Dead (from Linux 2.6.0 onward)",
+		dead:     "dead (Linux 2.6.33 to 3.13 only)",
+		Wakekill: "Wakekill (Linux 2.6.33 to 3.13 only)",
+		Waking:   "Waking (Linux 2.6.33 to 3.13 only)",
+		Parked: "Parked (Linux 3.9 to 3.13 only)",
+		Idle:   "Idle (Linux 4.14 onward)",
+	*/
+	return nil
+}
+
+func Reset() error {
+	if err := loadProcStat(); err != nil {
+		return err
+	}
+
+	if err := loadUname(); err != nil {
+		return err
+	}
+
+	if err := loadProcessStatusNames(nil); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func GetProcessInfo(pid int) (*ProcessInfo, error) {
+	path := filepath.Join(ProcPath, strconv.Itoa(pid))
+
+	if fileInfo, err := os.Lstat(path); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("GetProcessInfo %d: no such PID", pid)
+		} else {
+			return nil, err
+		}
+	} else {
+		if !fileInfo.IsDir() {
+			return nil, fmt.Errorf("GetProcessInfo %d: path [%s] is not a directory", pid, path)
+		}
+	}
+
+	var (
+		fileStat    = filepath.Join(path, ProcStatName)
+		fileCmdline = filepath.Join(path, ProcCmdlineName)
+	)
+
+	errLn := 2
+	errCh := make(chan error, errLn)
+
+	stat := make(map[string]any, 100)
+	getStat := func(errCh chan<- error) {
+		file, err := os.OpenFile(fileStat, os.O_RDONLY, os.FileMode(0))
+		if err != nil {
+			errCh <- err
+			return
+		}
+		defer func() {
+			errCh <- file.Close()
+		}()
+
+		fields := make([]string, 0, 100)
+		scanner := bufio.NewScanner(file)
+		scanner.Split(bufio.ScanWords)
+		for scanner.Scan() {
+			fields = append(fields, scanner.Text())
+		}
+
+		if err := scanner.Err(); err != nil {
+			errCh <- err
+		}
+
+		parseUintField := func(fieldName string, fieldNum int) (val uint64, fail error) {
+			val, err := strconv.ParseUint(fields[fieldNum-1], 10, 64)
+			if err != nil {
+				fail = fmt.Errorf("failed parsing field %d (%s): %s", fieldNum, fieldName, err.Error())
+			}
+
+			return
+		}
+
+		for k, v := range procPidStatsUInt {
+			val, err := parseUintField(k, v)
+			if err != nil {
+				errCh <- err
+			} else {
+				stat[k] = val
+			}
+		}
+
+		for k, v := range procPidStatsString {
+			stat[k] = fields[v-1]
+		}
+	}
+
+	cmdline := make([]string, 0, 1)
+	getCmdline := func(errCh chan<- error) {
+		file, err := os.OpenFile(fileCmdline, os.O_RDONLY, os.FileMode(0))
+		if err != nil {
+			errCh <- err
+			return
+		}
+		defer func() {
+			errCh <- file.Close()
+		}()
+
+		scanner := bufio.NewScanner(file)
+		scanner.Split(utils.ScanStrings)
+		for scanner.Scan() {
+			cmdline = append(cmdline, scanner.Text())
+		}
+
+		if err := scanner.Err(); err != nil {
+			errCh <- err
+		}
+	}
+
+	go getStat(errCh)
+	go getCmdline(errCh)
+
+	for errNo := 0; errNo < errLn; errNo++ {
+		err := <-errCh
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	processInfo := &ProcessInfo{
+		Pid:       stat["pid"].(uint64),
+		Comm:      strings.Trim(stat["comm"].(string), "()"),
+		State:     ProcessStatus(stat["state"].(string)),
+		StartTime: BTime.Add(time.Duration((float64(stat["starttime"].(uint64)) / float64(ClockTicksPerSecond)) * float64(time.Second))),
+		Cmdline:   cmdline,
+	}
+
+	if processInfo.Pid != uint64(pid) {
+		return nil, fmt.Errorf("unexpected process id %d found in %s", processInfo.Pid, fileStat)
+	}
+
+	if lenCmdline := len(processInfo.Cmdline); lenCmdline < 1 {
+		return nil, fmt.Errorf("unexpected argument count %d < 1 for process id %d", lenCmdline, processInfo.Pid)
+	}
+
+	return processInfo, nil
+}
+
+func GetProcessInfoFromUniqueId(uniqueId string) (processInfo *ProcessInfo, fail error) {
+	bytes, err := utils.Atob(uniqueId)
+	if err != nil {
+		return nil, err
+	}
+
+	pid := int(binary.BigEndian.Uint64(bytes))
+
+	processInfo, err = GetProcessInfo(pid)
+	if err != nil {
+		return nil, err
+	}
+
+	bytes = bytes[8:]
+	stt := int64(binary.BigEndian.Uint64(bytes))
+	if stt != processInfo.StartTime.UnixNano() {
+		return nil, fmt.Errorf("new process with same PID (%d) has different start time", processInfo.Pid)
+	}
+
+	return
+}
+
+func GetProcessUniqueId(processInfo IProcessInfo) string {
+	return processInfo.UniqueId()
+}
+
+type ProcessMonitor struct {
+	//nocopy noCopy
+	chCancel    chan any
+	chError     chan error
+	Process     *os.Process
+	ProcessInfo *ProcessInfo
+}
+
+func MonitorProcess(pid int) (*ProcessMonitor, error) {
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return nil, err
+	}
+
+	processInfo, err := GetProcessInfo(process.Pid)
+	if err != nil {
+		return nil, err
+	}
+
+	/*
+		ctx, cancel := context.WithCancelCause(context.Background())
+		go func(ctx context.Context, cancel context.CancelCauseFunc) {
+			for stop := false; !stop; {
+				select {
+				case <-ctx.Done():
+					stop = true
+					continue
+				default:
+					processState, err := process.Wait()
+					if err != nil {
+						cancel(err)
+					}
+					if processState.Exited() {
+
+					}
+				}
+			}
+		}(ctx, cancel)
+
+		cancel(nil)
+	*/
+
+	var monitor = ProcessMonitor{
+		chCancel:    make(chan any, 1),
+		chError:     make(chan error, 1),
+		Process:     process,
+		ProcessInfo: processInfo,
+	}
+
+	go func(monitor *ProcessMonitor) {
+		for {
+			processState, err := monitor.Process.Wait()
+			if err != nil {
+				monitor.chError <- err
+				break
+			}
+			if len(monitor.chCancel) > 0 {
+				monitor.chError <- nil
+				break
+			}
+			if processState.Exited() {
+				process, err := os.StartProcess(processInfo.Comm, processInfo.Cmdline, &os.ProcAttr{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}})
+				if err != nil {
+					monitor.chError <- err
+					break
+				}
+
+				processInfo, err := GetProcessInfo(process.Pid)
+				if err != nil {
+					monitor.chError <- err
+					break
+				}
+
+				monitor.Process = process
+				monitor.ProcessInfo = processInfo
+			} else {
+				fmt.Printf("%#v: %s\n", processState, processState.String())
+			}
+		}
+	}(&monitor)
+
+	//_ = processInfo
+	return &monitor, nil
+}

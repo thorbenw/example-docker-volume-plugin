@@ -1,0 +1,4 @@
+**/.vscode
+src/examplemount/examplemount
+rootfs
+*.tgz
