@@ -1,4 +1,6 @@
 **/.vscode
-src/examplemount/examplemount
+**/.vs
+**/examplemount
+**/ignoresignal
 rootfs
 *.tgz
