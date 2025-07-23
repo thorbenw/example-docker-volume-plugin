@@ -267,7 +267,8 @@ func TestMonitorProcess(t *testing.T) {
 	}
 
 	type args struct {
-		process *os.Process
+		process  *os.Process
+		recovery ProcessRecovery
 	}
 	tests := []struct {
 		name    string
@@ -277,7 +278,7 @@ func TestMonitorProcess(t *testing.T) {
 		wantErr bool
 	}{
 		// Test cases.
-		{name: "Default", args: args{process: processes[0]}, action: func(t *testing.T, wantErr bool, monitor *ProcessMonitor) {
+		{name: "Default", args: args{process: processes[0], recovery: Ignore}, action: func(t *testing.T, wantErr bool, monitor *ProcessMonitor) {
 			time.Sleep(2 * time.Second)
 			monitor.chCancel <- nil
 
@@ -299,7 +300,7 @@ func TestMonitorProcess(t *testing.T) {
 				}
 			}
 		}},
-		{name: "Restart", args: args{process: processes[1]}, action: func(t *testing.T, wantErr bool, monitor *ProcessMonitor) {
+		{name: "Restart", args: args{process: processes[1], recovery: Recover}, action: func(t *testing.T, wantErr bool, monitor *ProcessMonitor) {
 			time.Sleep(2 * time.Second)
 
 			if err := monitor.Process.Signal(os.Interrupt); err != nil {
@@ -314,7 +315,7 @@ func TestMonitorProcess(t *testing.T) {
 				return
 			}
 		}},
-		{name: "Ignore Interrupt", args: args{process: processes[2]}, action: func(t *testing.T, wantErr bool, monitor *ProcessMonitor) {
+		{name: "Ignore Interrupt", args: args{process: processes[2], recovery: Ignore}, action: func(t *testing.T, wantErr bool, monitor *ProcessMonitor) {
 			time.Sleep(2 * time.Second)
 
 			if err := CancelProcess(monitor, 5*time.Second); err != nil {
@@ -325,7 +326,7 @@ func TestMonitorProcess(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := MonitorProcess(tt.args.process.Pid)
+			got, err := MonitorProcess(tt.args.process.Pid, tt.args.recovery)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("MonitorProcess() error = %v, wantErr %v", err, tt.wantErr)
 				return

@@ -493,9 +493,16 @@ type ProcessMonitor struct {
 	chError     chan error
 	Process     *os.Process
 	ProcessInfo *ProcessInfo
+	Recovery    ProcessRecovery
 }
 
-func MonitorProcess(pid int) (*ProcessMonitor, error) {
+// Starts a goroutine that keeps track of the processes status. The [recovery]
+// parameter controls what happend if the process terminates (i.e. either exits
+// normally or is killed).
+//
+// The returned ProcessMonitor object is meant to be used in calls to
+// CancelProcess() and KillProcess().
+func MonitorProcess(pid int, recovery ProcessRecovery) (*ProcessMonitor, error) {
 	process, err := os.FindProcess(pid)
 	if err != nil {
 		return nil, err
@@ -513,6 +520,7 @@ func MonitorProcess(pid int) (*ProcessMonitor, error) {
 		chError:     make(chan error, 1),
 		Process:     process,
 		ProcessInfo: processInfo,
+		Recovery:    recovery,
 	}
 
 	go func(monitor *ProcessMonitor) {
@@ -527,6 +535,12 @@ func MonitorProcess(pid int) (*ProcessMonitor, error) {
 			if len(monitor.chCancel) > 0 {
 				monitor.chError <- err // may be even nil
 				break
+			}
+
+			if monitor.Recovery == Ignore {
+				break
+			} else if monitor.Recovery == Fail {
+				panic(errors.New(processState.String()))
 			}
 
 			process, err := os.StartProcess(processInfo.Cmdline[0], processInfo.Cmdline, &os.ProcAttr{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}})
@@ -551,6 +565,12 @@ func MonitorProcess(pid int) (*ProcessMonitor, error) {
 	return &monitor, nil
 }
 
+// Sends a cancel indicator to processMonitor.chCancel (if needed) and a SIGINT
+// signal to processMonitor.Process and waits [timeout] for the process to
+// terminate.
+//
+// If the process doesn't terminate before [timeout], KillProcess() is called
+// with the same timeout the it's result being passed through.
 func CancelProcess(processMonitor *ProcessMonitor, timeout time.Duration) error {
 	if timeout < (MIN_CANCEL_PROCESS_TIMEOUT_SECONDS * time.Second) {
 		return fmt.Errorf("cancel process: timeout must be at least %d second(s)", MIN_CANCEL_PROCESS_TIMEOUT_SECONDS)
@@ -577,9 +597,15 @@ func CancelProcess(processMonitor *ProcessMonitor, timeout time.Duration) error 
 	}
 }
 
+// Sends a cancel indicator to processMonitor.chCancel (if needed) and a SIGKILL
+// signal to processMonitor.Process and waits [timeout] for the process to
+// terminate.
+//
+// If the process doesn't terminate before [timeout], and according error is
+// returned.
 func KillProcess(processMonitor *ProcessMonitor, timeout time.Duration) error {
 	if timeout < (MIN_KILL___PROCESS_TIMEOUT_SECONDS * time.Second) {
-		return fmt.Errorf("kill process: timeout must be at least %d second(s)", MIN_CANCEL_PROCESS_TIMEOUT_SECONDS)
+		return fmt.Errorf("kill process: timeout must be at least %d second(s)", MIN_KILL___PROCESS_TIMEOUT_SECONDS)
 	}
 
 	if len(processMonitor.chCancel) < 1 {

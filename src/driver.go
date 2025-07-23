@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,28 +24,6 @@ const (
 	MinimumVolumeFolderMode = os.ModeDir | 0o700
 	DefaultVolumeFolderMode = os.ModeDir | 0o764
 )
-
-type exampleDriverRecovery int
-
-const (
-	Ignore exampleDriverRecovery = iota
-	Recover
-	Fail
-)
-
-var exampleDriverRecoveryNames = map[exampleDriverRecovery]string{
-	Ignore:  "Ignore",
-	Recover: "Recover",
-	Fail:    "Fail",
-}
-
-func (r exampleDriverRecovery) String() string {
-	if v, ok := exampleDriverRecoveryNames[r]; ok {
-		return v
-	} else {
-		return strconv.Itoa(int(r))
-	}
-}
 
 type exampleDriverMount struct {
 	ReferenceCount int
@@ -168,16 +145,16 @@ type exampleDriver struct {
 	*sync.Mutex
 	ControlFile           *os.File
 	RunBinary             string
-	VolumeProcessRecovery exampleDriverRecovery
+	VolumeProcessRecovery proc.ProcessRecovery
 }
 
 //var volumeProcesses map[string]*os.Process
 
 func exampleDriver_New(propagatedMount string, logger slog.Logger) (*exampleDriver, error) {
-	return exampleDriver_NewWithVolumeProcess(propagatedMount, logger, "", Ignore)
+	return exampleDriver_NewWithVolumeProcess(propagatedMount, logger, "", proc.Ignore)
 }
 
-func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logger, runBinary string, recovery exampleDriverRecovery) (*exampleDriver, error) {
+func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logger, runBinary string, recovery proc.ProcessRecovery) (*exampleDriver, error) {
 	if fileInfo, err := os.Lstat(propagatedMount); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			if err := os.MkdirAll(propagatedMount, os.ModeDir); err != nil {
