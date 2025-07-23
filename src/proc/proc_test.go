@@ -1,6 +1,7 @@
 package proc
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"os"
@@ -217,15 +218,48 @@ func TestGetProcessInfo(t *testing.T) {
 }
 
 func TestMonitorProcess(t *testing.T) {
-	processName, err := exec.LookPath("bash")
+	t.Parallel()
+
+	if Logger == nil {
+		Logger = logger
+	}
+
+	type cmd struct {
+		name string
+		argv []string
+		attr *os.ProcAttr
+	}
+
+	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	processes := [2]*os.Process{}
-	for i := range processes {
-		//process, err := os.StartProcess(processName, []string{processName}, &os.ProcAttr{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}})
-		process, err := os.StartProcess(processName, []string{}, &os.ProcAttr{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}})
+	srcPath := filepath.Join(cwd, "../../test/ignoresignal.c")
+	if _, err := os.Stat(srcPath); err != nil {
+		t.Fatal(err)
+	}
+
+	gccPath, err := exec.LookPath("gcc")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	binPath := filepath.Join(t.TempDir(), "ignoresignal")
+	if err := exec.Command(gccPath, srcPath, "-o", binPath, "-static").Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	attr := &os.ProcAttr{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}}
+	cmds := []cmd{
+		{name: binPath, argv: []string{}, attr: attr},
+		{name: binPath, argv: []string{}, attr: attr},
+		{name: binPath, argv: []string{"SIGINT"}, attr: attr},
+	}
+
+	processes := make([]*os.Process, len(cmds))
+	for i, cmd := range cmds {
+		process, err := os.StartProcess(cmd.name, append([]string{cmd.name}, cmd.argv...), cmd.attr)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -238,13 +272,56 @@ func TestMonitorProcess(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		delay   func(*ProcessMonitor)
+		action  func(*testing.T, bool, *ProcessMonitor)
 		want    *ProcessMonitor
 		wantErr bool
 	}{
 		// Test cases.
-		{name: "Default", args: args{process: processes[0]}, delay: func(monitor *ProcessMonitor) { time.Sleep(5 * time.Second); monitor.chCancel <- nil }},
-		{name: "Restart", args: args{process: processes[1]}, delay: func(monitor *ProcessMonitor) { time.Sleep(5 * time.Second) }},
+		{name: "Default", args: args{process: processes[0]}, action: func(t *testing.T, wantErr bool, monitor *ProcessMonitor) {
+			time.Sleep(2 * time.Second)
+			monitor.chCancel <- nil
+
+			if err := monitor.Process.Signal(os.Interrupt); err != nil {
+				t.Errorf("Signal() error = %v, wantErr %v", err, wantErr)
+				return
+			}
+
+			timeout := time.Duration(10)
+			ctx, cancel := context.WithTimeout(context.Background(), timeout*time.Second)
+			defer cancel()
+
+			select {
+			case <-ctx.Done():
+				t.Errorf("Process didn't exit within %d seconds timeout.", timeout)
+			case err := <-monitor.chError:
+				if err != nil {
+					t.Errorf("MonitorProcess() chError = %v, wantErr %v", err, wantErr)
+				}
+			}
+		}},
+		{name: "Restart", args: args{process: processes[1]}, action: func(t *testing.T, wantErr bool, monitor *ProcessMonitor) {
+			time.Sleep(2 * time.Second)
+
+			if err := monitor.Process.Signal(os.Interrupt); err != nil {
+				t.Errorf("Signal() error = %v, wantErr %v", err, wantErr)
+				return
+			}
+
+			time.Sleep(2 * time.Second)
+
+			if err := CancelProcess(monitor, 10*time.Second); err != nil {
+				t.Errorf("CancelProces() error = %v, wantErr %v", err, wantErr)
+				return
+			}
+		}},
+		{name: "Ignore Interrupt", args: args{process: processes[2]}, action: func(t *testing.T, wantErr bool, monitor *ProcessMonitor) {
+			time.Sleep(2 * time.Second)
+
+			if err := CancelProcess(monitor, 5*time.Second); err != nil {
+				t.Errorf("CancelProces() error = %v, wantErr %v", err, wantErr)
+				return
+			}
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -258,16 +335,7 @@ func TestMonitorProcess(t *testing.T) {
 				t.Errorf("MonitorProcess() = %v, want %v", got, tt.want)
 			}
 
-			tt.delay(got)
-
-			if err := tt.args.process.Signal(os.Interrupt); err != nil {
-				t.Errorf("Signal() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if err := <-got.chError; err != nil {
-				t.Errorf("MonitorProcess() chError = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
+			tt.action(t, tt.wantErr, got)
 		})
 	}
 }

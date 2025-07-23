@@ -8,10 +8,12 @@ package proc
 
 import (
 	"bufio"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -24,6 +26,7 @@ import (
 	"github.com/keebits/example-docker-volume-plugin/utils"
 )
 
+// region: ProcessStatus enum
 type ProcessStatus string
 
 const (
@@ -52,6 +55,9 @@ func (ps ProcessStatus) String() string {
 	return string(ps)
 }
 
+//endregion
+
+// region: ProcessInfo struct and interface
 type IProcessInfo interface {
 	UniqueId() string
 }
@@ -77,11 +83,15 @@ func (pi ProcessInfo) UniqueId() (uniqueId string) {
 	return
 }
 
+//endregion
+
 const (
-	DEFAULT_PROC_PATH         = "/proc"
-	DEFAULT_PROC_STAT_NAME    = "stat"
-	DEFAULT_PROC_CMDLINE_NAME = "cmdline"
-	TASK_COMM_LEN             = 16
+	DEFAULT_PROC_PATH                  = "/proc"
+	DEFAULT_PROC_STAT_NAME             = "stat"
+	DEFAULT_PROC_CMDLINE_NAME          = "cmdline"
+	TASK_COMM_LEN                      = 16
+	MIN_CANCEL_PROCESS_TIMEOUT_SECONDS = time.Duration(1)
+	MIN_KILL___PROCESS_TIMEOUT_SECONDS = time.Duration(1)
 )
 
 var (
@@ -97,6 +107,8 @@ var (
 	//
 	// If init() has been skipped, NoInit is set to true.
 	NoInit = false
+	//
+	Logger *slog.Logger
 	//
 	Release *semver.VersionInfo
 	// Root path for all subsequent procfs based operations.
@@ -313,6 +325,8 @@ func loadProcessStatusNames(release *semver.VersionInfo) error {
 }
 
 func Reset() error {
+	Logger = &slog.Logger{}
+
 	if err := loadProcStat(); err != nil {
 		return err
 	}
@@ -490,30 +504,9 @@ func MonitorProcess(pid int) (*ProcessMonitor, error) {
 	processInfo, err := GetProcessInfo(process.Pid)
 	if err != nil {
 		return nil, err
+	} else if _, err := os.Stat(processInfo.Cmdline[0]); os.IsNotExist(err) {
+		return nil, err
 	}
-
-	/*
-		ctx, cancel := context.WithCancelCause(context.Background())
-		go func(ctx context.Context, cancel context.CancelCauseFunc) {
-			for stop := false; !stop; {
-				select {
-				case <-ctx.Done():
-					stop = true
-					continue
-				default:
-					processState, err := process.Wait()
-					if err != nil {
-						cancel(err)
-					}
-					if processState.Exited() {
-
-					}
-				}
-			}
-		}(ctx, cancel)
-
-		cancel(nil)
-	*/
 
 	var monitor = ProcessMonitor{
 		chCancel:    make(chan any, 1),
@@ -529,31 +522,82 @@ func MonitorProcess(pid int) (*ProcessMonitor, error) {
 				monitor.chError <- err
 				break
 			}
+			Logger.Debug(processState.String(), "processName", processInfo.Cmdline[0], "processState", fmt.Sprintf("%#v", processState))
+
 			if len(monitor.chCancel) > 0 {
-				monitor.chError <- nil
+				monitor.chError <- err // may be even nil
 				break
 			}
-			if processState.Exited() {
-				process, err := os.StartProcess(processInfo.Comm, processInfo.Cmdline, &os.ProcAttr{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}})
-				if err != nil {
-					monitor.chError <- err
-					break
-				}
 
-				processInfo, err := GetProcessInfo(process.Pid)
-				if err != nil {
-					monitor.chError <- err
-					break
-				}
-
-				monitor.Process = process
-				monitor.ProcessInfo = processInfo
-			} else {
-				fmt.Printf("%#v: %s\n", processState, processState.String())
+			process, err := os.StartProcess(processInfo.Cmdline[0], processInfo.Cmdline, &os.ProcAttr{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}})
+			if err != nil {
+				monitor.chError <- err
+				break
 			}
+
+			processInfo, err := GetProcessInfo(process.Pid)
+			if err != nil {
+				monitor.chError <- err
+				break
+			}
+
+			monitor.Process = process
+			monitor.ProcessInfo = processInfo
+
+			Logger.Debug("restarted", "processName", processInfo.Cmdline[0], "process", process)
 		}
 	}(&monitor)
 
-	//_ = processInfo
 	return &monitor, nil
+}
+
+func CancelProcess(processMonitor *ProcessMonitor, timeout time.Duration) error {
+	if timeout < (MIN_CANCEL_PROCESS_TIMEOUT_SECONDS * time.Second) {
+		return fmt.Errorf("cancel process: timeout must be at least %d second(s)", MIN_CANCEL_PROCESS_TIMEOUT_SECONDS)
+	}
+
+	if len(processMonitor.chCancel) < 1 {
+		processMonitor.chCancel <- true
+	}
+
+	if err := processMonitor.Process.Signal(os.Interrupt); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	select {
+	case <-ctx.Done():
+		Logger.Debug("cancel process: timeout elapsed, killing process", "timeout", timeout, "process", processMonitor.Process)
+		return KillProcess(processMonitor, timeout)
+	case err := <-processMonitor.chError:
+		Logger.Debug("cancel process: cancelled process", "err", err, "process", processMonitor.Process)
+		return err
+	}
+}
+
+func KillProcess(processMonitor *ProcessMonitor, timeout time.Duration) error {
+	if timeout < (MIN_KILL___PROCESS_TIMEOUT_SECONDS * time.Second) {
+		return fmt.Errorf("kill process: timeout must be at least %d second(s)", MIN_CANCEL_PROCESS_TIMEOUT_SECONDS)
+	}
+
+	if len(processMonitor.chCancel) < 1 {
+		processMonitor.chCancel <- true
+	}
+
+	if err := processMonitor.Process.Kill(); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("kill process: %d timeout elapsed", timeout)
+	case err := <-processMonitor.chError:
+		Logger.Debug("kill process: killed process", "err", err, "process", processMonitor.Process)
+		return err
+	}
 }
