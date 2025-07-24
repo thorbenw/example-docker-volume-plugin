@@ -101,8 +101,10 @@ if [ $res -gt 0 ]; then
 fi
 echo "Enabled  plugin [$plugin_name]."
 
+tail_pid_file=$(mktemp)
+
 cat "$docker_container_daemon_log" | grep $id
-tail -f -n 0 "$docker_container_daemon_log" | grep $id &
+( tail -f -n 0 "$docker_container_daemon_log" & echo $! >"$tail_pid_file") | grep $id &
 
 export plugin_runtime_dir="/var/lib/docker/plugins/$id"
 export plugin_context=$docker_context
@@ -118,13 +120,19 @@ else
     echo "Plugin runtime folder [$plugin_runtime_dir] is not accessible for the current user. Can neither change there nor alter PATH. Continuing anyway. "
 fi
 
-echo "Temporarily exported environment variables available during debug session: $(printenv | grep ^plugin)"
-echo "Starting shell [$prompt]. Type 'exit' to stop debugging. Use the \$plugin variable to refer to the plugin."
+echo "\nTemporarily exported environment variables available during debug session:\n$(printenv | grep ^plugin)"
+echo "\nStarting shell [$prompt]. Type 'exit' to stop debugging. Use the \$plugin variable to refer to the plugin."
 "$prompt"
 res=$?
-echo "Stopping shell [$prompt] to stop debugging."
+echo "Stopping shell [$prompt] to stop debugging and cleaning up state and processes."
 cd "$lcd"
+
+tail_pid=$(cat "$tail_pid_file") || true
+rm "$tail_pid_file" || true
+kill -15 $tail_pid || echo "Failed terminating the tail process used to forward log file [$docker_container_daemon_log] to this console (pid=[$tail_pid]). Continuing anyway!\n"
+
 if [ $res -gt 0 ]; then
+    echo "Shell [$prompt] exited with code [$res]. Aborting debug session cleanup."
     exit $res
 fi
 
