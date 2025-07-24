@@ -26,7 +26,9 @@ func Test_exampleDriver(t *testing.T) {
 	if runBinary, err := exec.LookPath("inotifywatch"); err != nil {
 		t.Errorf("inotify-tools need to be installed (%s): sudo apt install inotify-tools", err.Error())
 	} else {
-		driver.RunBinary = runBinary
+		driver.VolumeProcess = func(path string) *exec.Cmd {
+			return exec.Command(runBinary, path)
+		}
 	}
 
 	if driver.Capabilities() == nil {

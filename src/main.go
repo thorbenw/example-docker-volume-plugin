@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/user"
 	"runtime/debug"
 	"strconv"
@@ -200,7 +201,9 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 	driver, err := exampleDriver_New(*propagatedMount, *logger)
 	if err == nil {
 		if strings.TrimSpace(*runBinary) != "" {
-			driver.RunBinary = *runBinary
+			driver.VolumeProcess = func(path string) *exec.Cmd {
+				return exec.Command(*runBinary, path)
+			}
 		}
 		driver.VolumeProcessRecoveryMode = volumeProcessRecoveryMode
 		logger.Debug(fmt.Sprintf("Created driver %T.", driver), "driver", driver)

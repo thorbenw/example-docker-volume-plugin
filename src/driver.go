@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -35,6 +36,8 @@ var (
 	processMonitors map[string]*proc.ProcessMonitor = make(map[string]*proc.ProcessMonitor)
 )
 
+type VolumeProcess func(string) *exec.Cmd
+
 type exampleDriverMount struct {
 	ReferenceCount int
 }
@@ -58,9 +61,27 @@ func (v *exampleDriverVolume) MountPoint() string {
 }
 
 func (v *exampleDriverVolume) SetupProcess(d *exampleDriver) error {
-	if strings.TrimSpace(v.Puid) == "" && strings.TrimSpace(d.RunBinary) != "" {
+	if strings.TrimSpace(v.Puid) == "" && d.VolumeProcess != nil {
 		// Create and detach process
-		if pid, err := os.StartProcess(d.RunBinary, []string{d.RunBinary, v.MountPoint()}, &os.ProcAttr{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}}); err != nil {
+
+		cmd := *d.VolumeProcess(v.MountPoint())
+		if cmd.Cancel != nil || cmd.WaitDelay != 0 {
+			return d.Tee(fmt.Errorf("command must not use a context"))
+		}
+		if cmd.Stdin != nil || cmd.Stdout != nil || cmd.Stderr != nil {
+			return d.Tee(fmt.Errorf("command must not use custom standard files"))
+		}
+		if cmd.Process != nil || cmd.ProcessState != nil {
+			return d.Tee(fmt.Errorf("command has already been started or run"))
+		}
+
+		attr := os.ProcAttr{
+			Dir:   cmd.Dir,
+			Env:   cmd.Env,
+			Files: append([]*os.File{os.Stdin, os.Stdout, os.Stderr}, cmd.ExtraFiles...),
+			Sys:   cmd.SysProcAttr,
+		}
+		if pid, err := os.StartProcess(cmd.Path, cmd.Args, &attr); err != nil {
 			return d.Tee(err)
 		} else {
 			wpid := pid.Pid
@@ -105,16 +126,16 @@ type exampleDriver struct {
 	slog.Logger
 	Volumes map[string]exampleDriverVolume
 	*sync.Mutex
-	ControlFile               *os.File
-	RunBinary                 string
+	ControlFile *os.File
+	VolumeProcess
 	VolumeProcessRecoveryMode proc.RecoveryMode
 }
 
 func exampleDriver_New(propagatedMount string, logger slog.Logger) (*exampleDriver, error) {
-	return exampleDriver_NewWithVolumeProcess(propagatedMount, logger, "", proc.RecoveryModeIgnore)
+	return exampleDriver_NewWithVolumeProcess(propagatedMount, logger, nil, proc.RecoveryModeIgnore)
 }
 
-func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logger, runBinary string, recoveryMode proc.RecoveryMode) (*exampleDriver, error) {
+func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logger, volumeProcess VolumeProcess, recoveryMode proc.RecoveryMode) (*exampleDriver, error) {
 	if fileInfo, err := os.Lstat(propagatedMount); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			if err := os.MkdirAll(propagatedMount, os.ModeDir); err != nil {
@@ -147,7 +168,7 @@ func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logg
 		//Volumes:               volumes,
 		Mutex:                     &sync.Mutex{},
 		ControlFile:               controlFile,
-		RunBinary:                 runBinary,
+		VolumeProcess:             volumeProcess,
 		VolumeProcessRecoveryMode: recoveryMode,
 	}
 
