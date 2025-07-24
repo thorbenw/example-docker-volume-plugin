@@ -45,6 +45,8 @@ const (
 	Idle     ProcessStatus = "I"
 )
 
+// Is populated by calling loadProcessStatusNames(), usually when calling Reset()
+// or during init().
 var ProcessStatusNames = map[ProcessStatus]string{}
 
 func (ps ProcessStatus) String() string {
@@ -107,9 +109,13 @@ var (
 	//
 	// If init() has been skipped, NoInit is set to true.
 	NoInit = false
+	// A logger to be used throughout all functions of the proc package.
 	//
+	// If not otherwise set, this is the default logger (slog.Logger.Default()).
+	// However, once set manually, Logger won't become the default logger again
+	// when callig Reset().
 	Logger *slog.Logger
-	//
+	// Ther current operating system release as returned by uname.
 	Release *semver.VersionInfo
 	// Root path for all subsequent procfs based operations.
 	ProcPath = DEFAULT_PROC_PATH
@@ -325,7 +331,9 @@ func loadProcessStatusNames(release *semver.VersionInfo) error {
 }
 
 func Reset() error {
-	Logger = &slog.Logger{}
+	if Logger == nil {
+		Logger = slog.Default()
+	}
 
 	if err := loadProcStat(); err != nil {
 		return err
@@ -532,12 +540,8 @@ func MonitorProcess(pid int, recovery ProcessRecovery) (*ProcessMonitor, error) 
 			}
 			Logger.Debug(processState.String(), "processName", processInfo.Cmdline[0], "processState", fmt.Sprintf("%#v", processState))
 
-			if len(monitor.chCancel) > 0 {
+			if len(monitor.chCancel) > 0 || monitor.Recovery == Ignore {
 				monitor.chError <- err // may be even nil
-				break
-			}
-
-			if monitor.Recovery == Ignore {
 				break
 			} else if monitor.Recovery == Fail {
 				panic(errors.New(processState.String()))
@@ -578,6 +582,8 @@ func CancelProcess(processMonitor *ProcessMonitor, timeout time.Duration) error 
 
 	if len(processMonitor.chCancel) < 1 {
 		processMonitor.chCancel <- true
+	} else {
+		Logger.Debug("Process monitor has already been tagged for cancellation.")
 	}
 
 	if err := processMonitor.Process.Signal(os.Interrupt); err != nil {
@@ -610,6 +616,8 @@ func KillProcess(processMonitor *ProcessMonitor, timeout time.Duration) error {
 
 	if len(processMonitor.chCancel) < 1 {
 		processMonitor.chCancel <- true
+	} else {
+		Logger.Debug("Process monitor has already been tagged for cancellation.")
 	}
 
 	if err := processMonitor.Process.Kill(); err != nil {
