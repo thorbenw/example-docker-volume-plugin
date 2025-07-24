@@ -26,7 +26,7 @@ import (
 	"github.com/keebits/example-docker-volume-plugin/utils"
 )
 
-// region: noCopy struct
+// region noCopy struct
 
 // noCopy may be embedded into structs which must not be copied after the first
 // use.
@@ -39,9 +39,8 @@ type noCopy struct{}
 func (*noCopy) Lock()   {}
 func (*noCopy) Unlock() {}
 
-//endregion
+// region ProcessStatus enum
 
-// region: ProcessStatus enum
 type ProcessStatus string
 
 const (
@@ -72,9 +71,8 @@ func (ps ProcessStatus) String() string {
 	return string(ps)
 }
 
-//endregion
+// region ProcessInfo struct
 
-// region: ProcessInfo struct and interface
 type IProcessInfo interface {
 	UniqueId() string
 }
@@ -100,7 +98,7 @@ func (pi ProcessInfo) UniqueId() (uniqueId string) {
 	return
 }
 
-//endregion
+// region Package globals
 
 const (
 	DEFAULT_PROC_PATH                  = "/proc"
@@ -153,6 +151,8 @@ var (
 		"state": 3,
 	}
 )
+
+// region Initialization
 
 func init() {
 	if !NoInit {
@@ -365,6 +365,8 @@ func Reset() error {
 	return nil
 }
 
+// region GetProcessInfo func
+
 func GetProcessInfo(pid int) (*ProcessInfo, error) {
 	path := filepath.Join(ProcPath, strconv.Itoa(pid))
 
@@ -509,6 +511,8 @@ func GetProcessInfoFromUniqueId(uniqueId string) (processInfo *ProcessInfo, fail
 func GetProcessUniqueId(processInfo IProcessInfo) string {
 	return processInfo.UniqueId()
 }
+
+// region Process Monitor
 
 type ProcessMonitor struct {
 	noCopy       noCopy
