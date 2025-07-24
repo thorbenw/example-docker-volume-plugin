@@ -25,20 +25,28 @@ const (
 	DefaultVolumeFolderMode = os.ModeDir | 0o764
 )
 
+var (
+	// Package internal map of process monitors in order to have process
+	// monitors running only once per volume.
+	//
+	// If process monitors were stored as a field in a volume object, their
+	// goroutines continue running even if a driver object is recreated (and
+	// thus all volume objects).
+	processMonitors map[string]*proc.ProcessMonitor = make(map[string]*proc.ProcessMonitor)
+)
+
 type exampleDriverMount struct {
 	ReferenceCount int
 }
 
 type exampleDriverVolume struct {
-	BasePath    string
-	Path        string
-	mountPoint  string
-	CreatedAt   time.Time
-	Mounts      *map[string]exampleDriverMount
-	Options     map[string]string
-	Puid        string
-	process     *os.Process
-	processChan chan bool
+	BasePath   string
+	Path       string
+	mountPoint string
+	CreatedAt  time.Time
+	Mounts     *map[string]exampleDriverMount
+	Options    map[string]string
+	Puid       string
 }
 
 func (v *exampleDriverVolume) MountPoint() string {
@@ -50,10 +58,6 @@ func (v *exampleDriverVolume) MountPoint() string {
 }
 
 func (v *exampleDriverVolume) SetupProcess(d *exampleDriver) error {
-	if v.process != nil {
-		d.Logger.Warn("Volume already has a process.")
-	}
-
 	if strings.TrimSpace(v.Puid) == "" && strings.TrimSpace(d.RunBinary) != "" {
 		// Create and detach process
 		if pid, err := os.StartProcess(d.RunBinary, []string{d.RunBinary, v.MountPoint()}, &os.ProcAttr{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}}); err != nil {
@@ -69,14 +73,6 @@ func (v *exampleDriverVolume) SetupProcess(d *exampleDriver) error {
 			} else {
 				v.Puid = prc.UniqueId()
 				d.Logger.Debug("Started a new volume process.", "process", prc, "volume", v)
-				/*
-					switch prc.State {
-					case proc.Running, proc.Sleeping:
-						d.Logger.Debug("Started a new volume process.", "process", prc, "volume", v)
-					default:
-						d.Logger.Warn("New volume process has an unexpected state.", "process", prc, "volume", v)
-					}
-				*/
 			}
 		}
 	}
@@ -89,48 +85,14 @@ func (v *exampleDriverVolume) SetupProcess(d *exampleDriver) error {
 			if pid, err := os.FindProcess(int(prc.Pid)); err != nil {
 				d.Logger.Warn("PID is invalid.", "err", err, "volume", v, "prc", prc)
 			} else {
-				v.process = pid
-				v.processChan = make(chan bool, 1)
-				go func() {
-					d.Logger.Debug("Monitoring volume process.", "volume", v, "pid", pid)
-
-					for {
-						ps, err := pid.Wait()
-						var cancel bool
-						select {
-						case cancel = <-v.processChan:
-						default:
-						}
-						if err != nil {
-							d.Logger.Warn("Monitoring volume process failed.", "err", err, "volume", v, "pid", pid)
-							break
-						}
-						d.Logger.Debug("Examining volume process.", "volume", v, "pid", pid, "state", ps)
-						if ps.Exited() && !cancel {
-							//v.SetupProcess(d)
-						}
-						v.processChan <- true
-						break //anyway
-					}
-				}()
-				/*
-					if err := pid.Signal(os.Interrupt); err != nil {
-						d.Logger.Warn("Signal SIGINT failed.", "err", err, "pid", pid, "prc", prc, "volume", v)
-					}
-					if pst, err := pid.Wait(); err != nil {
-						d.Logger.Warn("Process wait failed.", "err", err, "pid", pid, "prc", prc, "volume", v)
+				if _, ok := processMonitors[v.Puid]; !ok {
+					if processMonitor, err := proc.MonitorProcess(pid.Pid, d.VolumeProcessRecovery); err != nil {
+						d.Logger.Warn("Faild to monitor process.", "err", err, "volume", v, "prc", prc, "pid", pid)
 					} else {
-						if !pst.Exited() {
-							d.Logger.Warn("Volume process still running.", "pst", pst, "pid", pid, "prc", prc, "volume", v)
-						} else {
-							if pst.ExitCode() != 0 {
-								d.Logger.Warn("Volume process returned error code.", "pst", pst, "pid", pid, "prc", prc, "volume", v)
-							} else {
-								d.Logger.Debug("Volume process terminated.", "pst", pst, "pid", pid, "prc", prc, "volume", v)
-							}
-						}
+						processMonitors[v.Puid] = processMonitor
 					}
-				*/
+				}
+
 			}
 		}
 	}
@@ -147,8 +109,6 @@ type exampleDriver struct {
 	RunBinary             string
 	VolumeProcessRecovery proc.ProcessRecovery
 }
-
-//var volumeProcesses map[string]*os.Process
 
 func exampleDriver_New(propagatedMount string, logger slog.Logger) (*exampleDriver, error) {
 	return exampleDriver_NewWithVolumeProcess(propagatedMount, logger, "", proc.Ignore)
@@ -199,56 +159,11 @@ func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logg
 		}
 		mountCount += len(*vol.Mounts)
 
-		//var v *exampleDriverVolume = &(volumes[name])->se
 		if err := vol.SetupProcess(d); err != nil {
 			d.Logger.Warn("Setting up the volume process failed.", "volume", vol)
-		} else {
-			volumes[name] = vol
 		}
-		/*
-			if strings.TrimSpace(vol.Puid) != "" {
-				if prc, err := proc.GetProcessInfoFromUniqueId(vol.Puid); err != nil {
-					logger.Warn("PUID is invalid.", "err", err, "volume", vol)
-				} else {
-					switch prc.State {
-					case proc.Running, proc.Sleeping:
-					default:
-						switch recovery {
-						case Ignore:
-						case Recover:
-						default: //case Fail:
-							return nil, fmt.Errorf("volume process is missing")
-						}
-					}
 
-					if _, err := os.FindProcess(int(prc.Pid)); err != nil {
-						logger.Warn("PID is invalid.", "err", err, "volume", vol, "prc", prc)
-					}
-
-					if pid, err := os.FindProcess(int(prc.Pid)); err != nil {
-						logger.Warn("PID is invalid.", "err", err, "volume", vol, "prc", prc)
-					} else {
-						if err := pid.Signal(os.Interrupt); err != nil {
-							logger.Warn("Signal SIGINT failed.", "err", err, "pid", pid, "prc", prc, "volume", vol)
-						}
-						if pst, err := pid.Wait(); err != nil {
-							logger.Warn("Process wait failed.", "err", err, "pid", pid, "prc", prc, "volume", vol)
-						} else {
-							if !pst.Exited() {
-								logger.Warn("Volume process still running.", "pst", pst, "pid", pid, "prc", prc, "volume", vol)
-							} else {
-								if pst.ExitCode() != 0 {
-									logger.Warn("Volume process returned error code.", "pst", pst, "pid", pid, "prc", prc, "volume", vol)
-								} else {
-									logger.Debug("Volume process terminated.", "pst", pst, "pid", pid, "prc", prc, "volume", vol)
-								}
-							}
-						}
-					}
-
-				}
-			}
-		*/
+		volumes[name] = vol
 	}
 	logger.Debug("Loaded volume information.", "volumeCount", len(volumes), "mountCount", mountCount)
 
@@ -352,33 +267,12 @@ func (d exampleDriver) Create(req *volume.CreateRequest) error {
 		CreatedAt: time.Now(),
 		Mounts:    &map[string]exampleDriverMount{},
 		Options:   req.Options,
-		//processChan: make(chan bool, 2),
 	}
 
 	if err := res.SetupProcess(&d); err != nil {
 		d.Logger.Warn("Setting up the volume process failed.", "volume", res)
 	}
-	/*
 
-		if strings.TrimSpace(d.RunBinary) != "" {
-			if pid, err := os.StartProcess(d.RunBinary, []string{d.RunBinary, volumePathAbs}, &os.ProcAttr{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}}); err != nil {
-				return d.Tee(err)
-			} else {
-				if prc, err := proc.GetProcessInfo(pid.Pid); err != nil {
-					return d.Tee(err)
-				} else {
-					res.Puid = prc.UniqueId()
-
-					switch prc.State {
-					case proc.Running, proc.Sleeping:
-						d.Logger.Debug("Started a new volume process.", "process", prc, "volume", res)
-					default:
-						d.Logger.Warn("New volume process has an unexpected state.", "process", prc, "volume", res)
-					}
-				}
-			}
-		}
-	*/
 	d.Volumes[req.Name] = res
 
 	if err := exampleDriver_Save(*d.ControlFile, d.Volumes); err != nil {
@@ -402,45 +296,12 @@ func (d exampleDriver) Remove(req *volume.RemoveRequest) error {
 		d.Mutex.Lock()
 		defer d.Mutex.Unlock()
 
-		if vol.process != nil {
-			//vol.Puid = ""
-			//d.Volumes[req.Name] = vol
-			vol.processChan <- true
-			if err := vol.process.Signal(os.Interrupt); err != nil {
-				d.Logger.Warn("Signalling failed.")
-			} else {
-				d.Logger.Debug("Signalled volume process.")
-				<-vol.processChan
+		if processMonitor, ok := processMonitors[vol.Puid]; ok {
+			if err := proc.CancelProcess(processMonitor, 5*time.Second); err != nil {
+				d.Logger.Warn("Failed terminating volume process.", "err", err)
 			}
+			delete(processMonitors, vol.Puid)
 		}
-		/*
-			if strings.TrimSpace(vol.Puid) != "" {
-				if prc, err := proc.GetProcessInfoFromUniqueId(vol.Puid); err != nil {
-					d.Logger.Warn("PUID is invalid.", "err", err, "volume", vol)
-				} else {
-					if pid, err := os.FindProcess(int(prc.Pid)); err != nil {
-						d.Logger.Warn("PID is invalid.", "err", err, "volume", vol, "prc", prc)
-					} else {
-						if err := pid.Signal(os.Interrupt); err != nil {
-							d.Logger.Warn("Signal SIGINT failed.", "err", err, "pid", pid, "prc", prc, "volume", vol)
-						}
-						if pst, err := pid.Wait(); err != nil {
-							d.Logger.Warn("Process wait failed.", "err", err, "pid", pid, "prc", prc, "volume", vol)
-						} else {
-							if !pst.Exited() {
-								d.Logger.Warn("Volume process still running.", "pst", pst, "pid", pid, "prc", prc, "volume", vol)
-							} else {
-								if pst.ExitCode() != 0 {
-									d.Logger.Warn("Volume process returned error code.", "pst", pst, "pid", pid, "prc", prc, "volume", vol)
-								} else {
-									d.Logger.Debug("Volume process terminated.", "pst", pst, "pid", pid, "prc", prc, "volume", vol)
-								}
-							}
-						}
-					}
-				}
-			}
-		*/
 
 		if err := os.Remove(vol.MountPoint()); err != nil {
 			return d.Tee(err)

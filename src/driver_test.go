@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/docker/go-plugins-helpers/volume"
+	"github.com/keebits/example-docker-volume-plugin/proc"
 	"github.com/keebits/example-docker-volume-plugin/utils"
 	"gotest.tools/assert"
 )
@@ -18,6 +19,8 @@ import (
 var logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{AddSource: true, Level: slog.LevelDebug}))
 
 func Test_exampleDriver(t *testing.T) {
+	proc.Logger = logger
+
 	volumeFolder := t.TempDir()
 	driver, _ := exampleDriver_New(volumeFolder, *logger)
 	if runBinary, err := exec.LookPath("inotifywatch"); err != nil {
