@@ -497,7 +497,7 @@ func GetProcessUniqueId(processInfo IProcessInfo) string {
 
 type ProcessMonitor struct {
 	//nocopy noCopy
-	chCancel     chan any
+	cancel       bool
 	chError      chan error
 	Process      *os.Process
 	ProcessInfo  *ProcessInfo
@@ -524,7 +524,6 @@ func MonitorProcess(pid int, recoveryMode RecoveryMode) (*ProcessMonitor, error)
 	}
 
 	var monitor = ProcessMonitor{
-		chCancel:     make(chan any, 1),
 		chError:      make(chan error, 1),
 		Process:      process,
 		ProcessInfo:  processInfo,
@@ -540,7 +539,7 @@ func MonitorProcess(pid int, recoveryMode RecoveryMode) (*ProcessMonitor, error)
 			}
 			Logger.Debug(processState.String(), "processName", processInfo.Cmdline[0], "processState", fmt.Sprintf("%#v", processState))
 
-			if len(monitor.chCancel) > 0 || monitor.RecoveryMode == RecoveryModeIgnore {
+			if monitor.cancel || monitor.RecoveryMode == RecoveryModeIgnore {
 				monitor.chError <- err // may be even nil
 				break
 			} else if monitor.RecoveryMode == RecoveryModePanic {
@@ -569,22 +568,17 @@ func MonitorProcess(pid int, recoveryMode RecoveryMode) (*ProcessMonitor, error)
 	return &monitor, nil
 }
 
-// Sends a cancel indicator to processMonitor.chCancel (if needed) and a SIGINT
-// signal to processMonitor.Process and waits [timeout] for the process to
-// terminate.
+// Sends a SIGINT signal to processMonitor.Process and waits [timeout] for the
+// process to terminate.
 //
 // If the process doesn't terminate before [timeout], KillProcess() is called
-// with the same timeout the it's result being passed through.
+// with the same timeout and it's result being passed through.
 func CancelProcess(processMonitor *ProcessMonitor, timeout time.Duration) error {
 	if timeout < (MIN_CANCEL_PROCESS_TIMEOUT_SECONDS * time.Second) {
 		return fmt.Errorf("cancel process: timeout must be at least %d second(s)", MIN_CANCEL_PROCESS_TIMEOUT_SECONDS)
 	}
 
-	if len(processMonitor.chCancel) < 1 {
-		processMonitor.chCancel <- true
-	} else {
-		Logger.Debug("Process monitor has already been tagged for cancellation.")
-	}
+	processMonitor.cancel = true
 
 	if err := processMonitor.Process.Signal(os.Interrupt); err != nil {
 		return err
@@ -603,22 +597,17 @@ func CancelProcess(processMonitor *ProcessMonitor, timeout time.Duration) error 
 	}
 }
 
-// Sends a cancel indicator to processMonitor.chCancel (if needed) and a SIGKILL
-// signal to processMonitor.Process and waits [timeout] for the process to
-// terminate.
+// Sends a SIGKILL signal to processMonitor.Process and waits [timeout] for the
+// process to terminate.
 //
-// If the process doesn't terminate before [timeout], and according error is
+// If the process doesn't terminate before [timeout], an according error is
 // returned.
 func KillProcess(processMonitor *ProcessMonitor, timeout time.Duration) error {
 	if timeout < (MIN_KILL___PROCESS_TIMEOUT_SECONDS * time.Second) {
 		return fmt.Errorf("kill process: timeout must be at least %d second(s)", MIN_KILL___PROCESS_TIMEOUT_SECONDS)
 	}
 
-	if len(processMonitor.chCancel) < 1 {
-		processMonitor.chCancel <- true
-	} else {
-		Logger.Debug("Process monitor has already been tagged for cancellation.")
-	}
+	processMonitor.cancel = true
 
 	if err := processMonitor.Process.Kill(); err != nil {
 		return err

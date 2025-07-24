@@ -280,7 +280,7 @@ func TestMonitorProcess(t *testing.T) {
 		// Test cases.
 		{name: "Default", args: args{process: processes[0], recoveryMode: RecoveryModeIgnore}, action: func(t *testing.T, wantErr bool, monitor *ProcessMonitor) {
 			time.Sleep(2 * time.Second)
-			monitor.chCancel <- nil
+			monitor.cancel = true
 
 			if err := monitor.Process.Signal(os.Interrupt); err != nil {
 				t.Errorf("Signal() error = %v, wantErr %v", err, wantErr)
