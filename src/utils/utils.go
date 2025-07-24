@@ -197,3 +197,14 @@ func ScanStrings(data []byte, atEOF bool) (advance int, token []byte, err error)
 
 	return
 }
+
+// Select transforms all elements of a `slice` using the specified `function`.
+func Select[T any](slice []T, action func(T) T) []T {
+	var result = make([]T, 0, len(slice))
+
+	for _, element := range slice {
+		result = append(result, action(element))
+	}
+
+	return result
+}

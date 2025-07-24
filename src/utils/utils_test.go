@@ -8,6 +8,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -218,6 +219,28 @@ func TestScanStrings(t *testing.T) {
 			}
 			if !reflect.DeepEqual(gotToken, tt.wantToken) {
 				t.Errorf("ScanStrings() gotToken = %v, want %v", gotToken, tt.wantToken)
+			}
+		})
+	}
+}
+
+func TestSelect(t *testing.T) {
+	type args[T any] struct {
+		slice  []T
+		action func(T) T
+	}
+	tests := []struct {
+		name string
+		args args[string]
+		want []string
+	}{
+		// Test cases.
+		{name: "String", args: args[string]{slice: []string{"MiXeD"}, action: strings.ToLower}, want: []string{"mixed"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Select(tt.args.slice, tt.args.action); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Select() = %v, want %v", got, tt.want)
 			}
 		})
 	}
