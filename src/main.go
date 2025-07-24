@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/docker/go-plugins-helpers/volume"
+	"github.com/keebits/example-docker-volume-plugin/proc"
+	"github.com/keebits/example-docker-volume-plugin/utils"
 	"golang.org/x/exp/maps"
 )
 
@@ -102,6 +104,7 @@ func main() {
 func entryPoint(arg0 string, args []string) (exitCode int) {
 	usageMsg := fmt.Sprintf("Usage: %s [OPTIONS]\n", arg0)
 	logLevelList := strings.Join(maps.Keys(logLevelStrings), " | ")
+	volumeProcessRecoveryModeList := strings.Join(utils.Select(maps.Values(proc.RecoveryModeNames()), strings.ToLower), " | ")
 
 	flags := flag.NewFlagSet(arg0, flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
@@ -123,6 +126,7 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 	logSource := flags_Bool(flags, "log-source", "Include the source code position in the log.", false)
 	propagatedMount := flags_String(flags, "propagated-mount", "Where to find the propagated mount.", "/data")
 	runBinary := flags_String(flags, "run-binary", "Executable file to run for each volume.", "")
+	volumeProcessRecoveryModeString := flags_String(flags, "volume-process-recovery-mode", fmt.Sprintf("How to behave if the volume process terminates unexpectedly (one out of %s).", volumeProcessRecoveryModeList), strings.ToLower(proc.RecoveryModeIgnore.String()))
 
 	if err := flags.Parse(args); err != nil {
 		return EXIT_CODE_USAGE
@@ -166,6 +170,12 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 		logLevel = l
 	}
 
+	var invalidRecoveryMode = proc.RecoveryMode(-1)
+	var volumeProcessRecoveryMode proc.RecoveryMode
+	if volumeProcessRecoveryMode = proc.RecoveryModeParse(*volumeProcessRecoveryModeString, invalidRecoveryMode); volumeProcessRecoveryMode == invalidRecoveryMode {
+		errors = append(errors, fmt.Sprintf("Volume process recovery mode [%s] is not valid (use one out of %s).", *volumeProcessRecoveryModeString, volumeProcessRecoveryModeList))
+	}
+
 	if l := len(errors); l > 0 {
 		fmt.Fprintf(os.Stderr, "%s found %d errors during parameter and configuration checks:\n", arg0, l)
 
@@ -192,6 +202,7 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 		if strings.TrimSpace(*runBinary) != "" {
 			driver.RunBinary = *runBinary
 		}
+		driver.VolumeProcessRecoveryMode = volumeProcessRecoveryMode
 		logger.Debug(fmt.Sprintf("Created driver %T.", driver), "driver", driver)
 	} else {
 		logger.Error(err.Error())

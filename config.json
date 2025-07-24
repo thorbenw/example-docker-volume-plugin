@@ -25,6 +25,13 @@
         "value"
       ],
       "value": "/examplemount"
+    },
+    {
+      "name": "VOLUME_PROCESS_RECOVERY_MODE",
+      "settable": [
+        "value"
+      ],
+      "value": "Restart"
     }
   ],
   "PropagatedMount": "/data",
