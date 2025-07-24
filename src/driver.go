@@ -86,7 +86,7 @@ func (v *exampleDriverVolume) SetupProcess(d *exampleDriver) error {
 				d.Logger.Warn("PID is invalid.", "err", err, "volume", v, "prc", prc)
 			} else {
 				if _, ok := processMonitors[v.Puid]; !ok {
-					if processMonitor, err := proc.MonitorProcess(pid.Pid, d.VolumeProcessRecovery); err != nil {
+					if processMonitor, err := proc.MonitorProcess(pid.Pid, d.VolumeProcessRecoveryMode); err != nil {
 						d.Logger.Warn("Faild to monitor process.", "err", err, "volume", v, "prc", prc, "pid", pid)
 					} else {
 						processMonitors[v.Puid] = processMonitor
@@ -105,16 +105,16 @@ type exampleDriver struct {
 	slog.Logger
 	Volumes map[string]exampleDriverVolume
 	*sync.Mutex
-	ControlFile           *os.File
-	RunBinary             string
-	VolumeProcessRecovery proc.ProcessRecovery
+	ControlFile               *os.File
+	RunBinary                 string
+	VolumeProcessRecoveryMode proc.RecoveryMode
 }
 
 func exampleDriver_New(propagatedMount string, logger slog.Logger) (*exampleDriver, error) {
-	return exampleDriver_NewWithVolumeProcess(propagatedMount, logger, "", proc.Ignore)
+	return exampleDriver_NewWithVolumeProcess(propagatedMount, logger, "", proc.RecoveryModeIgnore)
 }
 
-func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logger, runBinary string, recovery proc.ProcessRecovery) (*exampleDriver, error) {
+func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logger, runBinary string, recoveryMode proc.RecoveryMode) (*exampleDriver, error) {
 	if fileInfo, err := os.Lstat(propagatedMount); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			if err := os.MkdirAll(propagatedMount, os.ModeDir); err != nil {
@@ -145,10 +145,10 @@ func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logg
 		PropagatedMount: propagatedMount,
 		Logger:          logger,
 		//Volumes:               volumes,
-		Mutex:                 &sync.Mutex{},
-		ControlFile:           controlFile,
-		RunBinary:             runBinary,
-		VolumeProcessRecovery: recovery,
+		Mutex:                     &sync.Mutex{},
+		ControlFile:               controlFile,
+		RunBinary:                 runBinary,
+		VolumeProcessRecoveryMode: recoveryMode,
 	}
 
 	mountCount := 0

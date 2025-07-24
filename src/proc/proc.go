@@ -497,11 +497,11 @@ func GetProcessUniqueId(processInfo IProcessInfo) string {
 
 type ProcessMonitor struct {
 	//nocopy noCopy
-	chCancel    chan any
-	chError     chan error
-	Process     *os.Process
-	ProcessInfo *ProcessInfo
-	Recovery    ProcessRecovery
+	chCancel     chan any
+	chError      chan error
+	Process      *os.Process
+	ProcessInfo  *ProcessInfo
+	RecoveryMode RecoveryMode
 }
 
 // Starts a goroutine that keeps track of the processes status. The [recovery]
@@ -510,7 +510,7 @@ type ProcessMonitor struct {
 //
 // The returned ProcessMonitor object is meant to be used in calls to
 // CancelProcess() and KillProcess().
-func MonitorProcess(pid int, recovery ProcessRecovery) (*ProcessMonitor, error) {
+func MonitorProcess(pid int, recoveryMode RecoveryMode) (*ProcessMonitor, error) {
 	process, err := os.FindProcess(pid)
 	if err != nil {
 		return nil, err
@@ -524,11 +524,11 @@ func MonitorProcess(pid int, recovery ProcessRecovery) (*ProcessMonitor, error) 
 	}
 
 	var monitor = ProcessMonitor{
-		chCancel:    make(chan any, 1),
-		chError:     make(chan error, 1),
-		Process:     process,
-		ProcessInfo: processInfo,
-		Recovery:    recovery,
+		chCancel:     make(chan any, 1),
+		chError:      make(chan error, 1),
+		Process:      process,
+		ProcessInfo:  processInfo,
+		RecoveryMode: recoveryMode,
 	}
 
 	go func(monitor *ProcessMonitor) {
@@ -540,10 +540,10 @@ func MonitorProcess(pid int, recovery ProcessRecovery) (*ProcessMonitor, error) 
 			}
 			Logger.Debug(processState.String(), "processName", processInfo.Cmdline[0], "processState", fmt.Sprintf("%#v", processState))
 
-			if len(monitor.chCancel) > 0 || monitor.Recovery == Ignore {
+			if len(monitor.chCancel) > 0 || monitor.RecoveryMode == RecoveryModeIgnore {
 				monitor.chError <- err // may be even nil
 				break
-			} else if monitor.Recovery == Fail {
+			} else if monitor.RecoveryMode == RecoveryModePanic {
 				panic(errors.New(processState.String()))
 			}
 

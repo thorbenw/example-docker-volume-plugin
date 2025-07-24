@@ -2,32 +2,51 @@
 
 package proc
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 // Recovery mode for monitored processes.
 //
 // See Ignore, Recover and Fail.
-type ProcessRecovery int
+type RecoveryMode int
 
 const (
 	// Return from the goroutine and do nothing else.
-	Ignore ProcessRecovery = iota
+	RecoveryModeIgnore RecoveryMode = iota
 	// Restart the process persistently.
-	Recover
+	RecoveryModeRestart
 	// Panic on unexpected (i.e. uncancelled) process termination.
-	Fail
+	RecoveryModePanic
 )
 
-var exampleDriverRecoveryNames = map[ProcessRecovery]string{
-	Ignore:  "Ignore",
-	Recover: "Recover",
-	Fail:    "Fail",
+var recoveryModeNames = map[RecoveryMode]string{
+	RecoveryModeIgnore:  "Ignore",
+	RecoveryModeRestart: "Restart",
+	RecoveryModePanic:   "Panic",
 }
 
-func (r ProcessRecovery) String() string {
-	if v, ok := exampleDriverRecoveryNames[r]; ok {
+func (r RecoveryMode) String() string {
+	if v, ok := recoveryModeNames[r]; ok {
 		return v
 	} else {
 		return strconv.Itoa(int(r))
 	}
+}
+
+func RecoveryModeParse(name string, defaultRecoveryMode RecoveryMode) RecoveryMode {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return defaultRecoveryMode
+	}
+
+	name = strings.ToLower(name)
+	for k, v := range recoveryModeNames {
+		if name == strings.ToLower(v) {
+			return k
+		}
+	}
+
+	return defaultRecoveryMode
 }
