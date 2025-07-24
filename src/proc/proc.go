@@ -26,6 +26,21 @@ import (
 	"github.com/keebits/example-docker-volume-plugin/utils"
 )
 
+// region: noCopy struct
+
+// noCopy may be embedded into structs which must not be copied after the first
+// use.
+//
+// See https://stackoverflow.com/questions/68183168/how-to-force-compiler-error-if-struct-shallow-copy
+// for details.
+type noCopy struct{}
+
+// Lock is a no-op used by -copylocks checker from `go vet`.
+func (*noCopy) Lock()   {}
+func (*noCopy) Unlock() {}
+
+//endregion
+
 // region: ProcessStatus enum
 type ProcessStatus string
 
@@ -496,7 +511,7 @@ func GetProcessUniqueId(processInfo IProcessInfo) string {
 }
 
 type ProcessMonitor struct {
-	//nocopy noCopy
+	noCopy       noCopy
 	cancel       bool
 	chError      chan error
 	Process      *os.Process
