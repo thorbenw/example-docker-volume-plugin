@@ -11,6 +11,8 @@ import (
 )
 
 func TestRecoveryMode(t *testing.T) {
+	assert.Assert(t, len(RecoveryModeNames()) == len(recoveryModeNames))
+
 	type args struct {
 		name                string
 		defaultRecoveryMode RecoveryMode

@@ -27,6 +27,10 @@ var recoveryModeNames = map[RecoveryMode]string{
 	RecoveryModePanic:   "Panic",
 }
 
+func RecoveryModeNames() map[RecoveryMode]string {
+	return recoveryModeNames
+}
+
 func (r RecoveryMode) String() string {
 	if v, ok := recoveryModeNames[r]; ok {
 		return v
