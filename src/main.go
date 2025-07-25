@@ -197,6 +197,7 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &logopt))
 	logger.Info("Starting the Example Docker Volume Plugin.", "version", version, "args", args)
+	proc.Logger = logger
 
 	driver, err := exampleDriver_New(*propagatedMount, *logger)
 	if err == nil {
