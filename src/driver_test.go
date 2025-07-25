@@ -180,7 +180,7 @@ func Test_exampleDriver_Get(t *testing.T) {
 			t.Errorf("Volume [%s] has been expected to exist.", volumeName)
 		} else {
 			if time_res, err := time.Parse(time.RFC3339, res.Volume.CreatedAt); err != nil {
-				t.Errorf("Parsing %T.CreatedAt (%s) failed.", res, res.Volume.CreatedAt)
+				t.Error(err)
 			} else {
 				time_now := time.Now()
 				assert.Assert(t, time_res.Unix() <= time_now.Unix(), "CreatedAt [%s] is expected to be in the past.", res.Volume.CreatedAt)
@@ -236,6 +236,9 @@ func Test_exampleDriver_List(t *testing.T) {
 		assert.Assert(t, len(res.Volumes) == 1)
 		for _, vol := range res.Volumes {
 			assert.Assert(t, vol.Mountpoint == filepath.Join(driver.PropagatedMount, utils.SHA256StringToString(vol.Name)))
+			if _, err := time.Parse(time.RFC3339, vol.CreatedAt); err != nil {
+				t.Error(err)
+			}
 		}
 	}
 }

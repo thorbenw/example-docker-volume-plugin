@@ -343,7 +343,7 @@ func (d exampleDriver) List() (*volume.ListResponse, error) {
 
 	res := volume.ListResponse{Volumes: []*volume.Volume{}}
 	for name, vol := range d.Volumes {
-		res.Volumes = append(res.Volumes, &volume.Volume{Name: name, Mountpoint: vol.MountPoint(), CreatedAt: vol.CreatedAt.String()})
+		res.Volumes = append(res.Volumes, &volume.Volume{Name: name, Mountpoint: vol.MountPoint(), CreatedAt: vol.CreatedAt.Format(time.RFC3339)})
 	}
 
 	d.Logger.Debug(fmt.Sprintf("List() successfully iterated [%d] volumes.", len(res.Volumes)), "res", res)
