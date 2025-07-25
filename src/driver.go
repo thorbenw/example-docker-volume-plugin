@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/docker/go-plugins-helpers/volume"
-	"github.com/keebits/example-docker-volume-plugin/proc"
-	"github.com/keebits/example-docker-volume-plugin/utils"
+	"github.com/thorbenw/example-docker-volume-plugin/proc"
+	"github.com/thorbenw/example-docker-volume-plugin/utils"
 )
 
 const (

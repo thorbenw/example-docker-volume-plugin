@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/keebits/example-docker-volume-plugin/utils"
+	"github.com/thorbenw/example-docker-volume-plugin/utils"
 )
 
 type VersionInfo struct {

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/keebits/example-docker-volume-plugin/semver"
+	"github.com/thorbenw/example-docker-volume-plugin/semver"
 	"gotest.tools/assert"
 )
 

@@ -1,7 +1,7 @@
 FROM golang:1.23.0-alpine AS builder
 ARG MODULE_VERSION="(docker)"
-COPY . /go/src/github.com/keebits/example-docker-volume-plugin
-WORKDIR /go/src/github.com/keebits/example-docker-volume-plugin
+COPY . /go/src/github.com/thorbenw/example-docker-volume-plugin
+WORKDIR /go/src/github.com/thorbenw/example-docker-volume-plugin
 # Always link statically: https://stackoverflow.com/questions/66963068/docker-alpine-executable-binary-not-found-even-if-in-path
 RUN find . -type f \
     && go mod tidy \
