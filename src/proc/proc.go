@@ -475,12 +475,20 @@ func GetProcessInfo(pid int) (*ProcessInfo, error) {
 		Cmdline:   cmdline,
 	}
 
+	errs := make([]error, 0, 2)
 	if processInfo.Pid != uint64(pid) {
-		return nil, fmt.Errorf("unexpected process id %d found in %s", processInfo.Pid, fileStat)
+		errs = append(errs, fmt.Errorf("unexpected process id %d found in %s", processInfo.Pid, fileStat))
 	}
 
 	if lenCmdline := len(processInfo.Cmdline); lenCmdline < 1 {
-		return nil, fmt.Errorf("unexpected argument count %d < 1 for process id %d", lenCmdline, processInfo.Pid)
+		errs = append(errs, fmt.Errorf("unexpected argument count %d < 1 for process id %d", lenCmdline, processInfo.Pid))
+	}
+
+	errs_len := len(errs)
+	if errs_len > 0 {
+		Logger.Error(fmt.Sprintf("GetProcessInfo %d: Process validation found %d error(s).", pid, errs_len), "processInfo", processInfo)
+
+		return nil, errors.Join(errs...)
 	}
 
 	return processInfo, nil
