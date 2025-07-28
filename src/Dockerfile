@@ -9,6 +9,6 @@ RUN set -ex \
 
 # Use the same alpine image version that the above golang image is based on
 FROM alpine:3.20.2
-RUN apk add s3fs-fuse
+RUN apk add s3fs-fuse mailcap
 COPY --from=builder /go/bin/example-docker-volume-plugin .
 CMD ["/example-docker-volume-plugin"]
