@@ -43,6 +43,11 @@
     "socket": "example.sock"
   },
   "linux": {
-    "capabilities": ["CAP_SYS_ADMIN"]
+    "capabilities": ["CAP_SYS_ADMIN"],
+    "devices": [
+        {
+            "path": "/dev/fuse"
+        }
+    ]
   }
 }
