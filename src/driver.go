@@ -233,8 +233,10 @@ func exampleDriver_Save(file os.File, data map[string]exampleDriverVolume) error
 	return nil
 }
 
-func (d exampleDriver) Tee(err error) error {
-	d.Logger.Error(err.Error())
+func (d exampleDriver) Tee(err error, args ...any) error {
+	args = append([]any{"err", fmt.Sprintf("%#v", err)}, args...)
+
+	d.Logger.Error(err.Error(), args...)
 
 	return err
 }
