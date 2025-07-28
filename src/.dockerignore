@@ -1,5 +1,5 @@
 .dockerignore
 Dockerfile
-go.sum
-**/*_test.go
 examplemount/examplemount
+**/*_test.go
+**/*.ods

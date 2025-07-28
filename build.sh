@@ -69,6 +69,26 @@ if [ -f "$version_file" ]; then
 fi
 echo "Building version [$version_string]."
 
+if command -v go >/dev/null; then
+    echo "Checking [go.sum]."
+    cur_go_sum="./src/go.sum"
+    tmp_go_sum="$(mktemp)"
+
+    cp -p "$cur_go_sum" "$tmp_go_sum"
+    go_sum_hash_old="$(sha256sum -b ./src/go.sum)"
+    (cd ./src; go mod tidy)
+    go_sum_hash_new="$(sha256sum -b ./src/go.sum)"
+    mv "$tmp_go_sum" "$cur_go_sum"
+
+    if [ "$go_sum_hash_old" != "$go_sum_hash_new" ]; then
+        echo "Checked  [go.sum] -> File is outdated, please update."
+        exit 1
+    fi
+    echo "Checked  [go.sum] -> Ok."
+else
+    echo "Cannot check go.sum due to go being absent. Errors may occur during build!"
+fi
+
 docker build -t rootfsimage:dev --build-arg MODULE_VERSION="$version_string" --progress plain ./src || exit $?
 id=$(docker create rootfsimage:dev true)
 if [ -z "$id" ]; then
