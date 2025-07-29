@@ -28,5 +28,6 @@ and others.
 - [Implementing (i.e. faking) Enums in Go](https://builtin.com/software-engineering-perspectives/golang-enum)
 - [Demystifying Synchronous and Asynchronous Programming in Go](https://pandazblog.hashnode.dev/synchronous-vs-asynchronous-programming-in-golang)
 - [Guide to Graceful Shutdown in Go](https://medium.com/@karthianandhanit/a-guide-to-graceful-shutdown-in-go-with-goroutines-and-context-1ebe3654cac8)
+- [How to handle errors in Goroutines](https://medium.com/@rayato159/how-to-handle-errors-in-goroutines-0cced153551a)
 - [Docker Engine managed plugin system documentation](https://docs.docker.com/engine/extend/)
 - [Docker Plugins: How to write your own](https://www.inovex.de/de/blog/docker-plugins/)
