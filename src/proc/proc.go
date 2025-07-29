@@ -367,6 +367,33 @@ func Reset() error {
 
 // region GetProcessInfo func
 
+func GetProcessInfoWithTimeout(timeout time.Duration, pause time.Duration, pid int) (*ProcessInfo, error) {
+	errs := make([]error, 0, 2)
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			errs_len := len(errs)
+			err := make([]error, 0, errs_len+1)
+			err = append(err, fmt.Errorf("context was done before process info could be collected after %d tries", errs_len))
+			err = append(err, errs...)
+
+			return nil, errors.Join(err...)
+		default:
+			if result, err := GetProcessInfo(pid); err != nil {
+				errs = append(errs, err)
+				time.Sleep(pause)
+				continue
+			} else {
+				return result, nil
+			}
+		}
+	}
+}
+
 func GetProcessInfo(pid int) (*ProcessInfo, error) {
 	path := filepath.Join(ProcPath, strconv.Itoa(pid))
 
@@ -579,7 +606,7 @@ func MonitorProcess(pid int, recoveryMode RecoveryMode) (*ProcessMonitor, error)
 				break
 			}
 
-			processInfo, err := GetProcessInfo(process.Pid)
+			processInfo, err := GetProcessInfoWithTimeout(5*time.Second, 1*time.Second, process.Pid)
 			if err != nil {
 				monitor.chError <- err
 				break

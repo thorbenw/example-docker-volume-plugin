@@ -202,8 +202,13 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 	driver, err := exampleDriver_New(*propagatedMount, *logger)
 	if err == nil {
 		if strings.TrimSpace(*runBinary) != "" {
-			driver.VolumeProcess = func(path string) *exec.Cmd {
-				return exec.Command(*runBinary, path)
+			if binaryPath, err := exec.LookPath(*runBinary); err != nil {
+				logger.Error(err.Error())
+				return EXIT_CODE_ERROR
+			} else {
+				driver.VolumeProcess = func(path string) *exec.Cmd {
+					return exec.Command(binaryPath, path)
+				}
 			}
 		}
 		driver.VolumeProcessRecoveryMode = volumeProcessRecoveryMode

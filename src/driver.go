@@ -89,7 +89,7 @@ func (v *exampleDriverVolume) SetupProcess(d *exampleDriver) error {
 				return d.Tee(err)
 			}
 
-			if prc, err := proc.GetProcessInfo(wpid); err != nil {
+			if prc, err := proc.GetProcessInfoWithTimeout(5*time.Second, 1*time.Second, wpid); err != nil {
 				return d.Tee(err)
 			} else {
 				v.Puid = prc.UniqueId()
