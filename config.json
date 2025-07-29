@@ -24,7 +24,7 @@
       "settable": [
         "value"
       ],
-      "value": "/examplemount"
+      "value": "s3fs"
     },
     {
       "name": "VOLUME_PROCESS_RECOVERY_MODE",
