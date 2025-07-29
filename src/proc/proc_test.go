@@ -217,6 +217,23 @@ func TestGetProcessInfo(t *testing.T) {
 	}
 }
 
+func TestGetProcessInfoWithTimeout(t *testing.T) {
+	t.Parallel()
+
+	if processInfo, err := GetProcessInfoWithTimeout(2*time.Second, 1*time.Second, 0); err == nil {
+		t.Errorf("GetProcessInfoWithTimeout(2, 1, 0) succeeded unexpectedly (%v).", processInfo)
+	} else {
+		logger.Debug("GetProcessInfoWithTimeout(2, 1, 0) returned error.", "err", err)
+	}
+
+	pid := os.Getpid()
+	if processInfo, err := GetProcessInfoWithTimeout(2*time.Second, 1*time.Second, pid); err != nil {
+		t.Error(err)
+	} else {
+		logger.Debug("GetProcessInfoWithTimeout(2, 1, pid)", "pid", pid, "processInfo", processInfo)
+	}
+}
+
 func TestMonitorProcess(t *testing.T) {
 	t.Parallel()
 
