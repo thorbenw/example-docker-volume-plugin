@@ -208,3 +208,26 @@ func Select[T any](slice []T, action func(T) T) []T {
 
 	return result
 }
+
+// Fetches one value from a channel if it has any ready-to-read value, and
+// return s a pointer to the fetched value.
+// If [ch] is closed or just has no values, the returned value is `nil` and the
+// second return value is set to `false`.
+//
+// ReceiveNonBlocking() mimics the [val, ok := <-ch] syntax, but doesn't block
+// if there is no ready-to-read value in the channel. It's behaviour is similar
+// to the original syntax if the channel is closed.
+// In contrast to checking for values using [len(ch)], it also works with
+// unbuffered channels and is also safe regarding the gap between the check and
+// the actual fetch.
+// By returning a pointer, this works with any channelled types.
+//
+// See https://stackoverflow.com/questions/3398490/checking-if-a-channel-has-a-ready-to-read-value-using-go
+func ReceiveNonBlocking[T any](ch chan T) (*T, bool) {
+	select {
+	case val, ok := <-ch:
+		return &val, ok
+	default:
+		return nil, false
+	}
+}

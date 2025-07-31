@@ -245,3 +245,50 @@ func TestSelect(t *testing.T) {
 		})
 	}
 }
+
+func TestReceiveNonBlocking(t *testing.T) {
+	t.Parallel()
+
+	test := "test"
+
+	type args struct {
+		ch chan string
+	}
+	tests := []struct {
+		name   string
+		args   args
+		flags  int
+		want   *string
+		wantOk bool
+	}{
+		// Test cases.
+		{name: "Default", args: args{ch: make(chan string, 1)}, flags: 0, want: &test, wantOk: true},
+		{name: "Empty", args: args{ch: make(chan string, 1)}, flags: 0, want: nil, wantOk: false},
+		{name: "Unbuffered", args: args{ch: make(chan string)}, flags: 0, want: &test, wantOk: true},
+		{name: "Closed", args: args{ch: make(chan string, 1)}, flags: 1, want: &test, wantOk: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.want != nil && tt.wantOk == true {
+				// Do this asynchronously in order not to block when testing
+				// unbuffered channels.
+				go func() {
+					tt.args.ch <- *tt.want
+				}()
+				// Wait a moment in order to grant some time to finish sending
+				// to buffered channels.
+				time.Sleep(2 * time.Second)
+			}
+			if tt.flags&1 == 1 {
+				close(tt.args.ch)
+			}
+			got, gotOk := ReceiveNonBlocking(tt.args.ch)
+			if tt.wantOk && !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ReceiveNonBlocking() got = %v, want %v", got, tt.want)
+			}
+			if gotOk != tt.wantOk {
+				t.Errorf("ReceiveNonBlocking() gotOk = %v, wantOk %v", gotOk, tt.wantOk)
+			}
+		})
+	}
+}

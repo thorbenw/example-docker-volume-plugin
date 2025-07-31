@@ -7,7 +7,8 @@ This is another example driver like others present on
 the [example shim driver](https://github.com/docker/go-plugins-helpers/blob/main/volume/shim/shim.go),
 [marcelo-ochoa/docker-volume-plugins](https://github.com/marcelo-ochoa/docker-volume-plugins),
 [fntlnz/docker-volume-plugin-example](https://github.com/fntlnz/docker-volume-plugin-example),
-[vieux/docker-volume-sshfs](https://github.com/vieux/docker-volume-sshfs)
+[vieux/docker-volume-sshfs](https://github.com/vieux/docker-volume-sshfs),
+[sapk/docker-volume-rclone](https://github.com/sapk/docker-volume-rclone)
 and others.
 
 # Basic features
@@ -28,5 +29,6 @@ and others.
 - [Implementing (i.e. faking) Enums in Go](https://builtin.com/software-engineering-perspectives/golang-enum)
 - [Demystifying Synchronous and Asynchronous Programming in Go](https://pandazblog.hashnode.dev/synchronous-vs-asynchronous-programming-in-golang)
 - [Guide to Graceful Shutdown in Go](https://medium.com/@karthianandhanit/a-guide-to-graceful-shutdown-in-go-with-goroutines-and-context-1ebe3654cac8)
+- [How to handle errors in Goroutines](https://medium.com/@rayato159/how-to-handle-errors-in-goroutines-0cced153551a)
 - [Docker Engine managed plugin system documentation](https://docs.docker.com/engine/extend/)
 - [Docker Plugins: How to write your own](https://www.inovex.de/de/blog/docker-plugins/)
