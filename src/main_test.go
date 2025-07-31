@@ -38,4 +38,6 @@ func Test_entryPoint(t *testing.T) {
 	t.Setenv("VOLUME_PROCESS_RECOVERY_MAX_PER_MIN", "1")
 	testEntryPoint([]string{"--log-level=debug", fmt.Sprintf("--propagated-mount=%s", testFold)}, EXIT_CODE_ERROR)
 
+	t.Setenv("DEFAULT_MOUNT_OPTIONS", "key1=val1")
+	testEntryPoint([]string{"--log-level=debug", "-o=key2=val2", fmt.Sprintf("--propagated-mount=%s", testFold)}, EXIT_CODE_ERROR)
 }

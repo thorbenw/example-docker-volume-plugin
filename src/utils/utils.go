@@ -198,12 +198,26 @@ func ScanStrings(data []byte, atEOF bool) (advance int, token []byte, err error)
 	return
 }
 
-// Select transforms all elements of a `slice` using the specified `function`.
+// Select transforms all elements of a [slice] using the specified `action`.
 func Select[T any](slice []T, action func(T) T) []T {
 	var result = make([]T, 0, len(slice))
 
 	for _, element := range slice {
 		result = append(result, action(element))
+	}
+
+	return result
+}
+
+// Where returns all elements of a [slice] for which the specified `action`
+// returns `true`.
+func Where[T any](slice []T, action func(T) bool) []T {
+	var result = make([]T, 0, len(slice))
+
+	for _, element := range slice {
+		if action(element) {
+			result = append(result, element)
+		}
 	}
 
 	return result

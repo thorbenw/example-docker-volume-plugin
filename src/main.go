@@ -14,6 +14,7 @@ import (
 
 	"github.com/docker/go-plugins-helpers/volume"
 	"github.com/thorbenw/example-docker-volume-plugin/metric"
+	"github.com/thorbenw/example-docker-volume-plugin/mount"
 	"github.com/thorbenw/example-docker-volume-plugin/proc"
 	"github.com/thorbenw/example-docker-volume-plugin/utils"
 	"golang.org/x/exp/maps"
@@ -22,13 +23,14 @@ import (
 const (
 	VERSION_DEVEL = "(devel)"
 	// The default folder for plugin socket files. Unfortunately, github.com/docker/go-plugins-helpers/sdk.pluginSockDir is NOT exported :(
-	DEFAULT_PLUGIN_SOCK_DIR = "/run/docker/plugins"
-	DEFAULT_LOG_LEVEL       = slog.LevelInfo
-	EXIT_CODE_OK            = 0
-	EXIT_CODE_ERROR         = 1
-	EXIT_CODE_USAGE         = 2
-	EXIT_CODE_PARAM         = 3
-	EXIT_CODE_HELP          = 127
+	DEFAULT_PLUGIN_SOCK_DIR   = "/run/docker/plugins"
+	DEFAULT_LOG_LEVEL         = slog.LevelInfo
+	DEFAULT_MOUNT_OPTIONS_ENV = "DEFAULT_MOUNT_OPTIONS"
+	EXIT_CODE_OK              = 0
+	EXIT_CODE_ERROR           = 1
+	EXIT_CODE_USAGE           = 2
+	EXIT_CODE_PARAM           = 3
+	EXIT_CODE_HELP            = 127
 )
 
 var (
@@ -144,6 +146,15 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 	volumeProcessRecoveryModeString := flags_String(flags, "volume-process-recovery-mode", fmt.Sprintf("How to behave if the volume process terminates unexpectedly (one out of %s).", volumeProcessRecoveryModeList), strings.ToLower(proc.RecoveryModeIgnore.String()))
 	volumeProcessRecoveryMaxPerMin := flags_Uint(flags, "volume-process-recovery-max-per-min", "How many times the volume process will be restarted before giving up.", 3)
 
+	mountOptions := mount.NewOptions(10)
+	if env, ok := os_LookupEnv(DEFAULT_MOUNT_OPTIONS_ENV); ok {
+		if err := mountOptions.Set(env); err != nil {
+			fmt.Fprintln(flags.Output(), err)
+			return EXIT_CODE_ERROR
+		}
+	}
+	flags.Var(mountOptions, "o", "Mount options as used in mtab.")
+
 	if err := flags.Parse(args); err != nil {
 		return EXIT_CODE_USAGE
 	}
@@ -226,7 +237,14 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 				return EXIT_CODE_ERROR
 			} else {
 				driver.VolumeProcess = func(path string) *exec.Cmd {
-					return exec.Command(binaryPath, path)
+					cmdArgs := []string{path}
+
+					mntOpt := mountOptions.String()
+					if mntOpt != "" {
+						cmdArgs = append(cmdArgs, "-o", mntOpt)
+					}
+
+					return exec.Command(binaryPath, cmdArgs...)
 				}
 			}
 		}

@@ -38,7 +38,7 @@
       "settable": [
         "value"
       ],
-      "value": 2
+      "value": "2"
     }
   ],
   "PropagatedMount": "/data",
