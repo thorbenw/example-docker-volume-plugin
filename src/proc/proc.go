@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/thorbenw/example-docker-volume-plugin/metric"
 	"github.com/thorbenw/example-docker-volume-plugin/semver"
 	"github.com/thorbenw/example-docker-volume-plugin/utils"
 )
@@ -558,13 +559,16 @@ type ProcessMonitor struct {
 	RecoveryMode RecoveryMode
 }
 
-// Starts a goroutine that keeps track of the processes status. The [recovery]
-// parameter controls what happend if the process terminates (i.e. either exits
-// normally or is killed).
+// Starts a goroutine that keeps track of the processes status.
+// The [recoveryMode] parameter controls what happens if the process terminates
+// (i.e. either exits normally or is sinaled, terminated or even killed).
+// If [recoveryMode] is set to `RecoveryModeRestart`, the [rateLimit] parameter
+// controls when to give up restarting the process. If [rateLimit] is `nil`,
+// rate limiting defaults to 3 restarts within 1 minute.
 //
 // The returned ProcessMonitor object is meant to be used in calls to
 // CancelProcess() and KillProcess().
-func MonitorProcess(pid int, recoveryMode RecoveryMode) (*ProcessMonitor, error) {
+func MonitorProcess(pid int, recoveryMode RecoveryMode, rateLimit *metric.MetricRateLimit) (*ProcessMonitor, error) {
 	process, err := os.FindProcess(pid)
 	if err != nil {
 		return nil, err
@@ -584,7 +588,16 @@ func MonitorProcess(pid int, recoveryMode RecoveryMode) (*ProcessMonitor, error)
 		RecoveryMode: recoveryMode,
 	}
 
-	go func(monitor *ProcessMonitor) {
+	if rateLimit == nil {
+		rateLimit = &metric.MetricRateLimit{Limit: 3, Duration: 1 * time.Minute}
+	}
+
+	var rateMetric metric.Metric[int]
+	if rateMetric, err = metric.NewMetricBase[int](*rateLimit); err != nil {
+		return nil, err
+	}
+
+	go func(monitor *ProcessMonitor, metric *metric.Metric[int]) {
 		for {
 			processState, err := monitor.Process.Wait()
 			if err != nil {
@@ -594,10 +607,15 @@ func MonitorProcess(pid int, recoveryMode RecoveryMode) (*ProcessMonitor, error)
 			Logger.Debug(processState.String(), "processName", processInfo.Cmdline[0], "processState", fmt.Sprintf("%#v", processState))
 
 			if monitor.cancel || monitor.RecoveryMode == RecoveryModeIgnore {
-				monitor.chError <- err // may be even nil
+				monitor.chError <- err // expected to be nil, but nevermind
 				break
 			} else if monitor.RecoveryMode == RecoveryModePanic {
 				panic(errors.New(processState.String()))
+			}
+
+			if rate, duration, limitReached := (*metric).Rate(); limitReached {
+				monitor.chError <- fmt.Errorf("process has been restarted %d times within the last %s: giving up recovery", rate, duration)
+				break
 			}
 
 			process, err := os.StartProcess(processInfo.Cmdline[0], processInfo.Cmdline, &os.ProcAttr{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}})
@@ -615,9 +633,11 @@ func MonitorProcess(pid int, recoveryMode RecoveryMode) (*ProcessMonitor, error)
 			monitor.Process = process
 			monitor.ProcessInfo = processInfo
 
+			(*metric).Update(process.Pid)
+
 			Logger.Debug("restarted", "processName", processInfo.Cmdline[0], "process", process)
 		}
-	}(&monitor)
+	}(&monitor, &rateMetric)
 
 	return &monitor, nil
 }
@@ -630,6 +650,10 @@ func MonitorProcess(pid int, recoveryMode RecoveryMode) (*ProcessMonitor, error)
 func CancelProcess(processMonitor *ProcessMonitor, timeout time.Duration) error {
 	if timeout < (MIN_CANCEL_PROCESS_TIMEOUT_SECONDS * time.Second) {
 		return fmt.Errorf("cancel process: timeout must be at least %d second(s)", MIN_CANCEL_PROCESS_TIMEOUT_SECONDS)
+	}
+
+	if err, ok := utils.ReceiveNonBlocking(processMonitor.chError); ok {
+		return *err
 	}
 
 	processMonitor.cancel = true
@@ -659,6 +683,10 @@ func CancelProcess(processMonitor *ProcessMonitor, timeout time.Duration) error 
 func KillProcess(processMonitor *ProcessMonitor, timeout time.Duration) error {
 	if timeout < (MIN_KILL___PROCESS_TIMEOUT_SECONDS * time.Second) {
 		return fmt.Errorf("kill process: timeout must be at least %d second(s)", MIN_KILL___PROCESS_TIMEOUT_SECONDS)
+	}
+
+	if err, ok := utils.ReceiveNonBlocking(processMonitor.chError); ok {
+		return *err
 	}
 
 	processMonitor.cancel = true

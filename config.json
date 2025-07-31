@@ -32,6 +32,13 @@
         "value"
       ],
       "value": "Restart"
+    },
+    {
+      "name": "VOLUME_PROCESS_RECOVERY_MAX_PER_MIN",
+      "settable": [
+        "value"
+      ],
+      "value": 2
     }
   ],
   "PropagatedMount": "/data",

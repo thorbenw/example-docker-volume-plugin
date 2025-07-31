@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/docker/go-plugins-helpers/volume"
+	"github.com/thorbenw/example-docker-volume-plugin/metric"
 	"github.com/thorbenw/example-docker-volume-plugin/proc"
 	"github.com/thorbenw/example-docker-volume-plugin/utils"
 )
@@ -107,7 +108,7 @@ func (v *exampleDriverVolume) SetupProcess(d *exampleDriver) error {
 				d.Logger.Warn("PID is invalid.", "err", err, "volume", v, "prc", prc)
 			} else {
 				if _, ok := processMonitors[v.Puid]; !ok {
-					if processMonitor, err := proc.MonitorProcess(pid.Pid, d.VolumeProcessRecoveryMode); err != nil {
+					if processMonitor, err := proc.MonitorProcess(pid.Pid, d.VolumeProcessRecoveryMode, d.VolumeProcessRecoveryRateLimit); err != nil {
 						d.Logger.Warn("Faild to monitor process.", "err", err, "volume", v, "prc", prc, "pid", pid)
 					} else {
 						processMonitors[v.Puid] = processMonitor
@@ -128,14 +129,15 @@ type exampleDriver struct {
 	*sync.Mutex
 	ControlFile *os.File
 	VolumeProcess
-	VolumeProcessRecoveryMode proc.RecoveryMode
+	VolumeProcessRecoveryMode      proc.RecoveryMode
+	VolumeProcessRecoveryRateLimit *metric.MetricRateLimit
 }
 
 func exampleDriver_New(propagatedMount string, logger slog.Logger) (*exampleDriver, error) {
-	return exampleDriver_NewWithVolumeProcess(propagatedMount, logger, nil, proc.RecoveryModeIgnore)
+	return exampleDriver_NewWithVolumeProcess(propagatedMount, logger, nil, proc.RecoveryModeIgnore, nil)
 }
 
-func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logger, volumeProcess VolumeProcess, recoveryMode proc.RecoveryMode) (*exampleDriver, error) {
+func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logger, volumeProcess VolumeProcess, recoveryMode proc.RecoveryMode, recoveryRateLimit *metric.MetricRateLimit) (*exampleDriver, error) {
 	if fileInfo, err := os.Lstat(propagatedMount); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			if err := os.MkdirAll(propagatedMount, os.ModeDir); err != nil {
@@ -166,10 +168,11 @@ func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logg
 		PropagatedMount: propagatedMount,
 		Logger:          logger,
 		//Volumes:               volumes,
-		Mutex:                     &sync.Mutex{},
-		ControlFile:               controlFile,
-		VolumeProcess:             volumeProcess,
-		VolumeProcessRecoveryMode: recoveryMode,
+		Mutex:                          &sync.Mutex{},
+		ControlFile:                    controlFile,
+		VolumeProcess:                  volumeProcess,
+		VolumeProcessRecoveryMode:      recoveryMode,
+		VolumeProcessRecoveryRateLimit: recoveryRateLimit,
 	}
 
 	mountCount := 0
