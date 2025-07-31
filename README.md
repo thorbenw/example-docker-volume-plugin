@@ -7,7 +7,8 @@ This is another example driver like others present on
 the [example shim driver](https://github.com/docker/go-plugins-helpers/blob/main/volume/shim/shim.go),
 [marcelo-ochoa/docker-volume-plugins](https://github.com/marcelo-ochoa/docker-volume-plugins),
 [fntlnz/docker-volume-plugin-example](https://github.com/fntlnz/docker-volume-plugin-example),
-[vieux/docker-volume-sshfs](https://github.com/vieux/docker-volume-sshfs)
+[vieux/docker-volume-sshfs](https://github.com/vieux/docker-volume-sshfs),
+[sapk/docker-volume-rclone](https://github.com/sapk/docker-volume-rclone)
 and others.
 
 # Basic features
