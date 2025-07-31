@@ -246,6 +246,28 @@ func TestSelect(t *testing.T) {
 	}
 }
 
+func TestWhere(t *testing.T) {
+	type args[T any] struct {
+		slice  []T
+		action func(T) bool
+	}
+	tests := []struct {
+		name string
+		args args[string]
+		want []string
+	}{
+		// Test cases.
+		{name: "Default", args: args[string]{slice: []string{"", "one", "two", "", ""}, action: func(str string) bool { return str != "" }}, want: []string{"one", "two"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Where(tt.args.slice, tt.args.action); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Where() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestReceiveNonBlocking(t *testing.T) {
 	t.Parallel()
 
