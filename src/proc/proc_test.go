@@ -272,6 +272,7 @@ func TestMonitorProcess(t *testing.T) {
 		{name: binPath, argv: []string{}, attr: attr},
 		{name: binPath, argv: []string{}, attr: attr},
 		{name: binPath, argv: []string{"SIGINT"}, attr: attr},
+		{name: binPath, argv: []string{}, attr: attr},
 	}
 
 	processes := make([]*os.Process, len(cmds))
@@ -340,10 +341,27 @@ func TestMonitorProcess(t *testing.T) {
 				return
 			}
 		}},
+		{name: "Restart too often", args: args{process: processes[3], recoveryMode: RecoveryModeRestart}, action: func(t *testing.T, wantErr bool, monitor *ProcessMonitor) {
+			for i := 0; i < 4; i++ {
+				if err := monitor.Process.Signal(os.Interrupt); err != nil {
+					t.Errorf("Signal() error = %v, wantErr %v", err, wantErr)
+					break
+				}
+				time.Sleep(2 * time.Second)
+			}
+
+			if err := CancelProcess(monitor, 10*time.Second); err == nil {
+				t.Errorf("MonitorProcess() unexpectedly didn't give up: chError = %v, wantErr %v", err, wantErr)
+			} else {
+				logger.Debug("CancelProcess() expectedly failed.", "err", err)
+				assert.Assert(t, err.Error() == "process has been restarted 3 times within the last 1m0s: giving up recovery")
+			}
+
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := MonitorProcess(tt.args.process.Pid, tt.args.recoveryMode)
+			got, err := MonitorProcess(tt.args.process.Pid, tt.args.recoveryMode, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("MonitorProcess() error = %v, wantErr %v", err, tt.wantErr)
 				return

@@ -10,8 +10,10 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/docker/go-plugins-helpers/volume"
+	"github.com/thorbenw/example-docker-volume-plugin/metric"
 	"github.com/thorbenw/example-docker-volume-plugin/proc"
 	"github.com/thorbenw/example-docker-volume-plugin/utils"
 	"golang.org/x/exp/maps"
@@ -95,6 +97,18 @@ func flags_Bool(flags *flag.FlagSet, name string, usage string, value bool) (res
 	return
 }
 
+func flags_Uint(flags *flag.FlagSet, name string, usage string, value uint) (result *uint) {
+	result = flags.Uint(name, value, usage)
+
+	if env, ok := os_LookupEnv(name); ok {
+		if b, err := strconv.ParseUint(env, 10, 32); err == nil {
+			*result = uint(b)
+		}
+	}
+
+	return
+}
+
 //go:test exclude
 func main() {
 	args := os.Args[1:] // w/o program name, which is in element 0
@@ -128,6 +142,7 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 	propagatedMount := flags_String(flags, "propagated-mount", "Where to find the propagated mount.", "/data")
 	runBinary := flags_String(flags, "run-binary", "Executable file to run for each volume.", "")
 	volumeProcessRecoveryModeString := flags_String(flags, "volume-process-recovery-mode", fmt.Sprintf("How to behave if the volume process terminates unexpectedly (one out of %s).", volumeProcessRecoveryModeList), strings.ToLower(proc.RecoveryModeIgnore.String()))
+	volumeProcessRecoveryMaxPerMin := flags_Uint(flags, "volume-process-recovery-max-per-min", "How many times the volume process will be restarted before giving up.", 3)
 
 	if err := flags.Parse(args); err != nil {
 		return EXIT_CODE_USAGE
@@ -175,6 +190,10 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 	var volumeProcessRecoveryMode proc.RecoveryMode
 	if volumeProcessRecoveryMode = proc.RecoveryModeParse(*volumeProcessRecoveryModeString, invalidRecoveryMode); volumeProcessRecoveryMode == invalidRecoveryMode {
 		errors = append(errors, fmt.Sprintf("Volume process recovery mode [%s] is not valid (use one out of %s).", *volumeProcessRecoveryModeString, volumeProcessRecoveryModeList))
+	} else {
+		if volumeProcessRecoveryMode == proc.RecoveryModeRestart && *volumeProcessRecoveryMaxPerMin < 1 {
+			errors = append(errors, fmt.Sprintf("Volume process recovery rate limit must not be less than 1 with volume process recovery mode is [%s] (specified value is %d).", *volumeProcessRecoveryModeString, *volumeProcessRecoveryMaxPerMin))
+		}
 	}
 
 	if l := len(errors); l > 0 {
@@ -212,6 +231,7 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 			}
 		}
 		driver.VolumeProcessRecoveryMode = volumeProcessRecoveryMode
+		driver.VolumeProcessRecoveryRateLimit = &metric.MetricRateLimit{Limit: *volumeProcessRecoveryMaxPerMin, Duration: time.Minute}
 		logger.Debug(fmt.Sprintf("Created driver %T.", driver), "driver", driver)
 	} else {
 		logger.Error(err.Error())

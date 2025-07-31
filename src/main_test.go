@@ -29,10 +29,13 @@ func Test_entryPoint(t *testing.T) {
 	testEntryPoint([]string{"--version"}, EXIT_CODE_OK)
 	testEntryPoint([]string{"--version", "--log-level=test"}, EXIT_CODE_OK)
 	testEntryPoint([]string{"--build-info"}, EXIT_CODE_OK)
-	testEntryPoint([]string{"--log-level=test", "--volume-process-recovery-mode=test"}, EXIT_CODE_PARAM)
+	testEntryPoint([]string{"--log-level=test", "--volume-process-recovery-mode=test", "--volume-process-recovery-max-per-min=0"}, EXIT_CODE_PARAM)
+	testEntryPoint([]string{"--log-level=test", "--volume-process-recovery-mode=restart", "--volume-process-recovery-max-per-min=0"}, EXIT_CODE_PARAM)
 	testEntryPoint([]string{"--log-level=debug", fmt.Sprintf("--propagated-mount=%s", testFile)}, EXIT_CODE_PARAM)
 
 	t.Setenv("LOG_SOURCE", "true")
+	t.Setenv("VOLUME_PROCESS_RECOVERY_MODE", "restart")
+	t.Setenv("VOLUME_PROCESS_RECOVERY_MAX_PER_MIN", "1")
 	testEntryPoint([]string{"--log-level=debug", fmt.Sprintf("--propagated-mount=%s", testFold)}, EXIT_CODE_ERROR)
 
 }
