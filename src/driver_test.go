@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/docker/go-plugins-helpers/volume"
+	"github.com/thorbenw/example-docker-volume-plugin/mount"
 	"github.com/thorbenw/example-docker-volume-plugin/proc"
 	"github.com/thorbenw/example-docker-volume-plugin/utils"
 	"gotest.tools/assert"
@@ -26,8 +27,19 @@ func Test_exampleDriver(t *testing.T) {
 	if runBinary, err := exec.LookPath("inotifywatch"); err != nil {
 		t.Errorf("inotify-tools need to be installed (%s): sudo apt install inotify-tools", err.Error())
 	} else {
-		driver.VolumeProcess = func(path string) *exec.Cmd {
-			return exec.Command(runBinary, path)
+		driver.GetVolumeProcess = func(path string) (*exec.Cmd, *proc.Options, *mount.Options) {
+			return exec.Command(runBinary, path), nil, nil
+		}
+		driver.SetVolumeProcessOptions = func(cmd *exec.Cmd, vpOpt *proc.Options, mOpt *mount.Options) error {
+			if vpOpt != nil && vpOpt.Len() > 0 {
+				cmd.Args = append(cmd.Args, vpOpt.Slice()...)
+			}
+
+			if mOpt != nil && mOpt.Len() > 0 {
+				cmd.Args = append(cmd.Args, "-a", mOpt.String())
+			}
+
+			return nil
 		}
 	}
 
@@ -43,7 +55,7 @@ func Test_exampleDriver(t *testing.T) {
 			t.Fatalf("Volume [%s] hasn't been expected to exist.", volumeName)
 		}
 
-		if err := driver.Create(&volume.CreateRequest{Name: volumeName}); err != nil {
+		if err := driver.Create(&volume.CreateRequest{Name: volumeName, Options: map[string]string{"c": "-v", "o": "total", "optionKey": "OptionValue"}}); err != nil {
 			t.Errorf("Creating volume [%s] failed (%s).", volumeName, err.Error())
 		}
 		if err := driver.Create(&volume.CreateRequest{Name: volumeName}); err == nil {

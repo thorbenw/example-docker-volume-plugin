@@ -613,9 +613,16 @@ func MonitorProcess(pid int, recoveryMode RecoveryMode, rateLimit *metric.Metric
 				panic(errors.New(processState.String()))
 			}
 
-			if rate, duration, limitReached := (*metric).Rate(); limitReached {
-				monitor.chError <- fmt.Errorf("process has been restarted %d times within the last %s: giving up recovery", rate, duration)
+			rate, duration, limitReached := (*metric).Rate()
+			msg := fmt.Sprintf("monitored process has been restarted %d times within the last %s", rate, duration)
+			if limitReached {
+				msg = fmt.Sprintf("%s: giving up recovery", msg)
+				Logger.Debug(msg)
+				monitor.chError <- errors.New(msg)
 				break
+			} else {
+				msg = fmt.Sprintf("%s: attempting to restart process", msg)
+				Logger.Info(msg)
 			}
 
 			process, err := os.StartProcess(processInfo.Cmdline[0], processInfo.Cmdline, &os.ProcAttr{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}})
@@ -635,7 +642,7 @@ func MonitorProcess(pid int, recoveryMode RecoveryMode, rateLimit *metric.Metric
 
 			(*metric).Update(process.Pid)
 
-			Logger.Debug("restarted", "processName", processInfo.Cmdline[0], "process", process)
+			Logger.Debug("restarted monitored process", "processName", processInfo.Cmdline[0], "process", process, "processInfo", processInfo)
 		}
 	}(&monitor, &rateMetric)
 
