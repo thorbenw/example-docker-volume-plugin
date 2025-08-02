@@ -51,6 +51,8 @@ func (o Option) String() string {
 	return result
 }
 
+// region Options struct
+
 type Options struct {
 	options *[]Option
 }
