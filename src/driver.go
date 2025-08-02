@@ -16,6 +16,7 @@ import (
 
 	"github.com/docker/go-plugins-helpers/volume"
 	"github.com/thorbenw/example-docker-volume-plugin/metric"
+	"github.com/thorbenw/example-docker-volume-plugin/mount"
 	"github.com/thorbenw/example-docker-volume-plugin/proc"
 	"github.com/thorbenw/example-docker-volume-plugin/utils"
 )
@@ -37,7 +38,8 @@ var (
 	processMonitors map[string]*proc.ProcessMonitor = make(map[string]*proc.ProcessMonitor)
 )
 
-type VolumeProcess func(string) *exec.Cmd
+type GetVolumeProcess func(string) (*exec.Cmd, *proc.Options, *mount.Options)
+type SetVolumeProcessOptions func(*exec.Cmd, *proc.Options, *mount.Options) error
 
 type exampleDriverMount struct {
 	ReferenceCount int
@@ -49,7 +51,7 @@ type exampleDriverVolume struct {
 	mountPoint string
 	CreatedAt  time.Time
 	Mounts     *map[string]exampleDriverMount
-	Options    map[string]string
+	Options    *map[string]string
 	Puid       string
 }
 
@@ -62,10 +64,11 @@ func (v *exampleDriverVolume) MountPoint() string {
 }
 
 func (v *exampleDriverVolume) SetupProcess(d *exampleDriver) error {
-	if strings.TrimSpace(v.Puid) == "" && d.VolumeProcess != nil {
+	if strings.TrimSpace(v.Puid) == "" && d.GetVolumeProcess != nil {
 		// Create and detach process
 
-		cmd := *d.VolumeProcess(v.MountPoint())
+		cmd, volumeProcessOptions, mountOptions := (*d).GetVolumeProcess(v.MountPoint())
+		d.Logger.Debug("GetVolumeProcess() returned.", "cmd", fmt.Sprintf("%#v", cmd), "volumeProcessOptions", fmt.Sprintf("%#v", volumeProcessOptions), "mountOptions", fmt.Sprintf("%#v", mountOptions))
 		if cmd.Cancel != nil || cmd.WaitDelay != 0 {
 			return d.Tee(fmt.Errorf("command must not use a context"))
 		}
@@ -74,6 +77,52 @@ func (v *exampleDriverVolume) SetupProcess(d *exampleDriver) error {
 		}
 		if cmd.Process != nil || cmd.ProcessState != nil {
 			return d.Tee(fmt.Errorf("command has already been started or run"))
+		}
+
+		var len_volumeOptions int
+		if v.Options != nil {
+			len_volumeOptions = len(*v.Options)
+		}
+		if len_volumeOptions > 0 {
+			if mountOptionsOption, ok := (*v.Options)["o"]; ok {
+				if mountOptions == nil {
+					mnt := mount.NewOptions(len_volumeOptions)
+					mountOptions = &mnt
+				}
+
+				if err := mountOptions.Set(mountOptionsOption); err != nil {
+					return d.Tee(err)
+				}
+			}
+
+			if volumeProcessOptionsOption, ok := (*v.Options)["c"]; ok {
+				if volumeProcessOptions == nil {
+					mnt := proc.NewOptions(len_volumeOptions, VOLUME_PROCESS_OPTIONS_SEPARATOR, true)
+					volumeProcessOptions = &mnt
+				}
+
+				if err := volumeProcessOptions.Set(volumeProcessOptionsOption); err != nil {
+					return d.Tee(err)
+				}
+			}
+		}
+
+		d.Logger.Debug("Processed options.", "volumeProcessOptions", fmt.Sprintf("%#v", volumeProcessOptions), "mountOptions", fmt.Sprintf("%#v", mountOptions))
+		var len_options int
+		if mountOptions != nil {
+			len_options += mountOptions.Len()
+		}
+		if volumeProcessOptions != nil {
+			len_options += volumeProcessOptions.Len()
+		}
+		if len_options > 0 {
+			if d.SetVolumeProcessOptions == nil {
+				return d.Tee(fmt.Errorf("there are %d options present, but processing function is missing", len_options))
+			}
+
+			if err := (*d).SetVolumeProcessOptions(cmd, volumeProcessOptions, mountOptions); err != nil {
+				return d.Tee(err)
+			}
 		}
 
 		attr := os.ProcAttr{
@@ -128,16 +177,17 @@ type exampleDriver struct {
 	Volumes map[string]exampleDriverVolume
 	*sync.Mutex
 	ControlFile *os.File
-	VolumeProcess
+	GetVolumeProcess
+	SetVolumeProcessOptions
 	VolumeProcessRecoveryMode      proc.RecoveryMode
 	VolumeProcessRecoveryRateLimit *metric.MetricRateLimit
 }
 
 func exampleDriver_New(propagatedMount string, logger slog.Logger) (*exampleDriver, error) {
-	return exampleDriver_NewWithVolumeProcess(propagatedMount, logger, nil, proc.RecoveryModeIgnore, nil)
+	return exampleDriver_NewWithVolumeProcess(propagatedMount, logger, nil, nil, proc.RecoveryModeIgnore, nil)
 }
 
-func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logger, volumeProcess VolumeProcess, recoveryMode proc.RecoveryMode, recoveryRateLimit *metric.MetricRateLimit) (*exampleDriver, error) {
+func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logger, getVolumeProcess GetVolumeProcess, setVolumeProcessOptions SetVolumeProcessOptions, recoveryMode proc.RecoveryMode, recoveryRateLimit *metric.MetricRateLimit) (*exampleDriver, error) {
 	if fileInfo, err := os.Lstat(propagatedMount); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			if err := os.MkdirAll(propagatedMount, os.ModeDir); err != nil {
@@ -170,7 +220,8 @@ func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logg
 		//Volumes:               volumes,
 		Mutex:                          &sync.Mutex{},
 		ControlFile:                    controlFile,
-		VolumeProcess:                  volumeProcess,
+		GetVolumeProcess:               getVolumeProcess,
+		SetVolumeProcessOptions:        setVolumeProcessOptions,
 		VolumeProcessRecoveryMode:      recoveryMode,
 		VolumeProcessRecoveryRateLimit: recoveryRateLimit,
 	}
@@ -292,7 +343,7 @@ func (d exampleDriver) Create(req *volume.CreateRequest) error {
 		Path:      volumePathRel,
 		CreatedAt: time.Now(),
 		Mounts:    &map[string]exampleDriverMount{},
-		Options:   req.Options,
+		Options:   &req.Options,
 	}
 
 	if err := res.SetupProcess(&d); err != nil {
@@ -323,7 +374,7 @@ func (d exampleDriver) Remove(req *volume.RemoveRequest) error {
 		defer d.Mutex.Unlock()
 
 		if processMonitor, ok := processMonitors[vol.Puid]; ok {
-			if err := proc.CancelProcess(processMonitor, 5*time.Second); err != nil {
+			if err := proc.CancelProcess(processMonitor, 2*time.Second); err != nil {
 				d.Logger.Warn("Failed terminating volume process.", "err", err)
 			}
 			delete(processMonitors, vol.Puid)

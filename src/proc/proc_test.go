@@ -354,7 +354,7 @@ func TestMonitorProcess(t *testing.T) {
 				t.Errorf("MonitorProcess() unexpectedly didn't give up: chError = %v, wantErr %v", err, wantErr)
 			} else {
 				logger.Debug("CancelProcess() expectedly failed.", "err", err)
-				assert.Assert(t, err.Error() == "process has been restarted 3 times within the last 1m0s: giving up recovery")
+				assert.Assert(t, err.Error() == "monitored process has been restarted 3 times within the last 1m0s: giving up recovery")
 			}
 
 		}},
