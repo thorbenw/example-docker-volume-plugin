@@ -1,7 +1,7 @@
 package proc
 
 import (
-	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -44,16 +44,41 @@ func NewOptions(capacity int, separator string, trim bool) Options {
 	return Options{options: &options, separator: separator, trim: trim}
 }
 
+func OptionsString(o *Options, goSyntax bool) string {
+	format := "%v"
+	if goSyntax {
+		format = "%#v"
+	}
+
+	if o == nil {
+		return fmt.Sprintf(format, o)
+	} else {
+		return fmt.Sprintf(format, o.Slice())
+	}
+}
+
+func (o Options) SetSlice(value *[]string) error {
+	if o.options == nil {
+		return fmt.Errorf("%T.SetSlice(): options must be initialized using NewOptions()", o)
+	}
+
+	if value == nil {
+		return fmt.Errorf("%T.SetSlice(): value must not be nil", o)
+	}
+
+	return o.Set(strings.Join(*value, o.separator))
+}
+
 func (o Options) Set(value string) error {
 	if o.options == nil {
-		return errors.New("mount.Options.Set(): options must be initialized using NewOptions()")
+		return fmt.Errorf("%T.Set(): options must be initialized using NewOptions()", o)
 	}
 
 	if o.trim {
 		value = strings.TrimSpace(value)
 	}
 	if value == "" {
-		return errors.New("mount.Options.Set(): value must not be empty")
+		return fmt.Errorf("%T.Set(): value must not be nil", o)
 	}
 
 	options := strings.Split(value, o.separator)

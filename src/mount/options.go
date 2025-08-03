@@ -1,7 +1,6 @@
 package mount
 
 import (
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -63,13 +62,26 @@ func NewOptions(capacity int) Options {
 	return Options{options: &options}
 }
 
+func OptionsString(o *Options, goSyntax bool) string {
+	format := "%v"
+	if goSyntax {
+		format = "%#v"
+	}
+
+	if o == nil {
+		return fmt.Sprintf(format, o)
+	} else {
+		return fmt.Sprintf(format, o.Map())
+	}
+}
+
 func (o Options) SetMap(value *map[string]string) error {
 	if o.options == nil {
-		return errors.New("mount.Options.Set(): options must be initialized using NewOptions()")
+		return fmt.Errorf("%T.SetMap(): options must be initialized using NewOptions()", o)
 	}
 
 	if value == nil {
-		return errors.New("mount.Options.Set(): value must not be nil")
+		return fmt.Errorf("%T.SetMap(): value must not be nil", o)
 	}
 
 	options := make([]string, 0, len(*value))
@@ -82,12 +94,12 @@ func (o Options) SetMap(value *map[string]string) error {
 
 func (o Options) Set(value string) error {
 	if o.options == nil {
-		return errors.New("mount.Options.Set(): options must be initialized using NewOptions()")
+		return fmt.Errorf("%T.Set(): options must be initialized using NewOptions()", o)
 	}
 
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return errors.New("mount.Options.Set(): value must not be empty")
+		return fmt.Errorf("%T.Set(): value must not be nil", o)
 	}
 
 	options := strings.Split(value, ",")

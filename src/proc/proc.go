@@ -621,7 +621,7 @@ func MonitorProcess(pid int, recoveryMode RecoveryMode, rateLimit *metric.Metric
 				monitor.chError <- errors.New(msg)
 				break
 			} else {
-				msg = fmt.Sprintf("%s: attempting to restart process", msg)
+				msg = fmt.Sprintf("%s: attempting to restart it", msg)
 				Logger.Info(msg)
 			}
 
