@@ -27,6 +27,13 @@
       "value": "s3fs"
     },
     {
+      "name": "VOLUME_PROCESS_OPTIONS",
+      "settable": [
+        "value"
+      ],
+      "value": "{mountPoint}&-f"
+    },
+    {
       "name": "VOLUME_PROCESS_RECOVERY_MODE",
       "settable": [
         "value"
@@ -39,6 +46,20 @@
         "value"
       ],
       "value": "2"
+    },
+    {
+      "name": "MOUNT_OPTIONS",
+      "settable": [
+        "value"
+      ],
+      "value": "logfile=/dev/stdout,dbglevel=info"
+    },
+    {
+      "name": "MOUNT_OPTIONS_VOLUME_PROCESS_OPTION",
+      "settable": [
+        "value"
+      ],
+      "value": "-o"
     }
   ],
   "PropagatedMount": "/data",
