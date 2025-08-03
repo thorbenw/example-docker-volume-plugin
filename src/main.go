@@ -22,10 +22,10 @@ import (
 
 const (
 	VERSION_DEVEL                                 = "(devel)"
-	VOLUME_PROCESS_OPTIONS_ENV                    = "DEFAULT_VOLUME_PROCESS_OPTIONS"
+	VOLUME_PROCESS_OPTIONS_ENV                    = "VOLUME_PROCESS_OPTIONS"
 	VOLUME_PROCESS_OPTIONS_SEPARATOR              = "&"
 	VOLUME_PROCESS_OPTIONS_MOUNTPOINT_PLACEHOLDER = "{mountPoint}"
-	MOUNT_OPTIONS_ENV                             = "DEFAULT_MOUNT_OPTIONS"
+	MOUNT_OPTIONS_ENV                             = "MOUNT_OPTIONS"
 	// The default folder for plugin socket files. Unfortunately, github.com/docker/go-plugins-helpers/sdk.pluginSockDir is NOT exported :(
 	DEFAULT_PLUGIN_SOCK_DIR = "/run/docker/plugins"
 	DEFAULT_LOG_LEVEL       = slog.LevelInfo
@@ -126,6 +126,11 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 	logLevelList := strings.Join(maps.Keys(logLevelStrings), " | ")
 	volumeProcessRecoveryModeList := strings.Join(utils.Select(maps.Values(proc.RecoveryModeNames()), strings.ToLower), " | ")
 
+	var (
+		env string
+		ok  bool
+	)
+
 	flags := flag.NewFlagSet(arg0, flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	flags.Usage = func() {
@@ -145,21 +150,25 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 	logLevelString := flags_String(flags, "log-level", fmt.Sprintf("The log level (one out of %s).", logLevelList), "info")
 	logSource := flags_Bool(flags, "log-source", "Include the source code position in the log.", false)
 	propagatedMount := flags_String(flags, "propagated-mount", "Where to find the propagated mount.", "/data")
-	runBinary := flags_String(flags, "run-binary", "Executable file to run for each volume.", "")
+
+	volumeProcessBinary := flags_String(flags, "volume-process-binary", "Executable file to run for each volume. Must be either an absolute file path or be within $PATH.", "")
 	volumeProcessRecoveryModeString := flags_String(flags, "volume-process-recovery-mode", fmt.Sprintf("How to behave if the volume process terminates unexpectedly (one out of %s).", volumeProcessRecoveryModeList), strings.ToLower(proc.RecoveryModeIgnore.String()))
 	volumeProcessRecoveryMaxPerMin := flags_Uint(flags, "volume-process-recovery-max-per-min", "How many times the volume process will be restarted before giving up.", 3)
-
 	volumeProcessOptions := proc.NewOptions(5, VOLUME_PROCESS_OPTIONS_SEPARATOR, true)
-	if env, ok := os_LookupEnv(VOLUME_PROCESS_OPTIONS_ENV); ok {
-		if err := volumeProcessOptions.Set(env); err != nil {
-			fmt.Fprintln(flags.Output(), err)
-			return EXIT_CODE_ERROR
-		}
+	env, ok = os_LookupEnv(VOLUME_PROCESS_OPTIONS_ENV)
+	if !ok || strings.TrimSpace(env) == "" {
+		env = VOLUME_PROCESS_OPTIONS_MOUNTPOINT_PLACEHOLDER
+	}
+	if err := volumeProcessOptions.Set(env); err != nil {
+		fmt.Fprintln(flags.Output(), err)
+		return EXIT_CODE_ERROR
 	}
 	flags.Var(volumeProcessOptions, "c", fmt.Sprintf("Command line options for the volume process, separated by '%s' (without the single quotation marks). Ocurrences of '%s' (again, without the single quotation marks) will be replaced with the mount point path.", VOLUME_PROCESS_OPTIONS_SEPARATOR, VOLUME_PROCESS_OPTIONS_MOUNTPOINT_PLACEHOLDER))
 
+	mountOptionsVolumeProcessOptions := flags_String(flags, "mount-options-volume-process-option", "A command line option for the volume process that is inserted before the mount options (most tools e.g. use '-o' (without the single quotation marks)).", "")
 	mountOptions := mount.NewOptions(10)
-	if env, ok := os_LookupEnv(MOUNT_OPTIONS_ENV); ok {
+	env, ok = os_LookupEnv(MOUNT_OPTIONS_ENV)
+	if ok {
 		if err := mountOptions.Set(env); err != nil {
 			fmt.Fprintln(flags.Output(), err)
 			return EXIT_CODE_ERROR
@@ -243,21 +252,28 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 
 	driver, err := exampleDriver_New(*propagatedMount, *logger)
 	if err == nil {
-		if strings.TrimSpace(*runBinary) != "" {
-			if binaryPath, err := exec.LookPath(*runBinary); err != nil {
+		if strings.TrimSpace(*volumeProcessBinary) != "" {
+			if binaryPath, err := exec.LookPath(*volumeProcessBinary); err != nil {
 				logger.Error(err.Error())
 				return EXIT_CODE_ERROR
 			} else {
-				driver.GetVolumeProcess = func(path string) (*exec.Cmd, *proc.Options, *mount.Options) {
-					return exec.Command(binaryPath, path), &volumeProcessOptions, &mountOptions
+				driver.GetVolumeProcess = func() (*exec.Cmd, *proc.Options, *mount.Options) {
+					return exec.Command(binaryPath), &volumeProcessOptions, &mountOptions
 				}
-				driver.SetVolumeProcessOptions = func(cmd *exec.Cmd, vpOpt *proc.Options, mOpt *mount.Options) error {
+				driver.SetVolumeProcessOptions = func(cmd *exec.Cmd, vpOpt *proc.Options, mOpt *mount.Options, mountPoint string) error {
 					if vpOpt != nil && vpOpt.Len() > 0 {
-						cmd.Args = append(cmd.Args, vpOpt.Slice()...)
+						lvpOpt := utils.Select(vpOpt.Slice(), func(str string) string {
+							return strings.ReplaceAll(str, VOLUME_PROCESS_OPTIONS_MOUNTPOINT_PLACEHOLDER, mountPoint)
+						})
+						cmd.Args = append(cmd.Args, lvpOpt...)
 					}
 
 					if mOpt != nil && mOpt.Len() > 0 {
-						cmd.Args = append(cmd.Args, "-o", mOpt.String())
+						*mountOptionsVolumeProcessOptions = strings.TrimSpace(*mountOptionsVolumeProcessOptions)
+						if *mountOptionsVolumeProcessOptions != "" {
+							cmd.Args = append(cmd.Args, *mountOptionsVolumeProcessOptions)
+						}
+						cmd.Args = append(cmd.Args, mOpt.String())
 					}
 
 					return nil

@@ -27,10 +27,12 @@ func Test_exampleDriver(t *testing.T) {
 	if runBinary, err := exec.LookPath("inotifywatch"); err != nil {
 		t.Errorf("inotify-tools need to be installed (%s): sudo apt install inotify-tools", err.Error())
 	} else {
-		driver.GetVolumeProcess = func(path string) (*exec.Cmd, *proc.Options, *mount.Options) {
-			return exec.Command(runBinary, path), nil, nil
+		driver.GetVolumeProcess = func() (*exec.Cmd, *proc.Options, *mount.Options) {
+			return exec.Command(runBinary), nil, nil
 		}
-		driver.SetVolumeProcessOptions = func(cmd *exec.Cmd, vpOpt *proc.Options, mOpt *mount.Options) error {
+		driver.SetVolumeProcessOptions = func(cmd *exec.Cmd, vpOpt *proc.Options, mOpt *mount.Options, mountPoint string) error {
+			cmd.Args = append(cmd.Args, mountPoint)
+
 			if vpOpt != nil && vpOpt.Len() > 0 {
 				cmd.Args = append(cmd.Args, vpOpt.Slice()...)
 			}

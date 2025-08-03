@@ -38,8 +38,8 @@ var (
 	processMonitors map[string]*proc.ProcessMonitor = make(map[string]*proc.ProcessMonitor)
 )
 
-type GetVolumeProcess func(string) (*exec.Cmd, *proc.Options, *mount.Options)
-type SetVolumeProcessOptions func(*exec.Cmd, *proc.Options, *mount.Options) error
+type GetVolumeProcess func() (*exec.Cmd, *proc.Options, *mount.Options)
+type SetVolumeProcessOptions func(*exec.Cmd, *proc.Options, *mount.Options, string) error
 
 type exampleDriverMount struct {
 	ReferenceCount int
@@ -67,8 +67,8 @@ func (v *exampleDriverVolume) SetupProcess(d *exampleDriver) error {
 	if strings.TrimSpace(v.Puid) == "" && d.GetVolumeProcess != nil {
 		// Create and detach process
 
-		cmd, volumeProcessOptions, mountOptions := (*d).GetVolumeProcess(v.MountPoint())
-		d.Logger.Debug("GetVolumeProcess() returned.", "cmd", fmt.Sprintf("%#v", cmd), "volumeProcessOptions", fmt.Sprintf("%#v", volumeProcessOptions), "mountOptions", fmt.Sprintf("%#v", mountOptions))
+		cmd, volumeProcessOptions, mountOptions := (*d).GetVolumeProcess()
+		d.Logger.Debug("Got volume process.", "cmd", fmt.Sprintf("%#v", cmd), "volumeProcessOptions", proc.OptionsString(volumeProcessOptions, true), "mountOptions", mount.OptionsString(mountOptions, true))
 		if cmd.Cancel != nil || cmd.WaitDelay != 0 {
 			return d.Tee(fmt.Errorf("command must not use a context"))
 		}
@@ -84,17 +84,6 @@ func (v *exampleDriverVolume) SetupProcess(d *exampleDriver) error {
 			len_volumeOptions = len(*v.Options)
 		}
 		if len_volumeOptions > 0 {
-			if mountOptionsOption, ok := (*v.Options)["o"]; ok {
-				if mountOptions == nil {
-					mnt := mount.NewOptions(len_volumeOptions)
-					mountOptions = &mnt
-				}
-
-				if err := mountOptions.Set(mountOptionsOption); err != nil {
-					return d.Tee(err)
-				}
-			}
-
 			if volumeProcessOptionsOption, ok := (*v.Options)["c"]; ok {
 				if volumeProcessOptions == nil {
 					mnt := proc.NewOptions(len_volumeOptions, VOLUME_PROCESS_OPTIONS_SEPARATOR, true)
@@ -105,22 +94,33 @@ func (v *exampleDriverVolume) SetupProcess(d *exampleDriver) error {
 					return d.Tee(err)
 				}
 			}
+
+			if mountOptionsOption, ok := (*v.Options)["o"]; ok {
+				if mountOptions == nil {
+					mnt := mount.NewOptions(len_volumeOptions)
+					mountOptions = &mnt
+				}
+
+				if err := mountOptions.Set(mountOptionsOption); err != nil {
+					return d.Tee(err)
+				}
+			}
 		}
 
-		d.Logger.Debug("Processed options.", "volumeProcessOptions", fmt.Sprintf("%#v", volumeProcessOptions), "mountOptions", fmt.Sprintf("%#v", mountOptions))
+		d.Logger.Debug("Processed options.", "volumeProcessOptions", proc.OptionsString(volumeProcessOptions, true), "mountOptions", mount.OptionsString(mountOptions, true))
 		var len_options int
-		if mountOptions != nil {
-			len_options += mountOptions.Len()
-		}
 		if volumeProcessOptions != nil {
 			len_options += volumeProcessOptions.Len()
+		}
+		if mountOptions != nil {
+			len_options += mountOptions.Len()
 		}
 		if len_options > 0 {
 			if d.SetVolumeProcessOptions == nil {
 				return d.Tee(fmt.Errorf("there are %d options present, but processing function is missing", len_options))
 			}
 
-			if err := (*d).SetVolumeProcessOptions(cmd, volumeProcessOptions, mountOptions); err != nil {
+			if err := (*d).SetVolumeProcessOptions(cmd, volumeProcessOptions, mountOptions, v.MountPoint()); err != nil {
 				return d.Tee(err)
 			}
 		}
