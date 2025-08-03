@@ -20,7 +20,7 @@
       "value": "false"
     },
     {
-      "name": "RUN_BINARY",
+      "name": "VOLUME_PROCESS_BINARY",
       "settable": [
         "value"
       ],

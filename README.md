@@ -70,9 +70,9 @@ whose names result from converting all characters to upper case, removing all
 leading dashes (`-`) and replacing all remaining dashes to underscores (`_`).
 E.g. the value of the `--volume-process-recovery-mode` option can be also set
 using a `VOLUME_PROCESS_RECOVERY_MODE` environment variable.
-A value for the `-c` option can be set using a `DEFAULT_VOLUME_PROCESS_OPTIONS`
+A value for the `-c` option can be set using a `VOLUME_PROCESS_OPTIONS`
 environment variable, and a value for the `-o` option can be set using a
-`DEFAULT_MOUNT_OPTIONS`.
+`MOUNT_OPTIONS` environment variable.
 If values for a single option are specified in both, environment variables as
 well as command line options, those specified on the command line take
 precedence and the values from the environment variables are ignored.
