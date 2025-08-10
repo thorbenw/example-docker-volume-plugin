@@ -250,7 +250,7 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 	logger.Info("Starting the Example Docker Volume Plugin.", "version", version, "args", args)
 	proc.Logger = logger
 
-	driver, err := exampleDriver_New(*propagatedMount, *logger)
+	driver, err := pluginDriver_New(*propagatedMount, *logger)
 	if err == nil {
 		if strings.TrimSpace(*volumeProcessBinary) != "" {
 			if binaryPath, err := exec.LookPath(*volumeProcessBinary); err != nil {
