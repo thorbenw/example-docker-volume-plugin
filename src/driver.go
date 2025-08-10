@@ -306,7 +306,7 @@ func (d pluginDriver) Get(req *volume.GetRequest) (*volume.GetResponse, error) {
 				Name:       req.Name,
 				Mountpoint: vol.MountPoint(),
 				CreatedAt:  vol.CreatedAt.Format(time.RFC3339),
-				//Status: map[string]slog.Attr{"example":"value"},
+				//Status: map[string]slog.Attr{"key":"value"},
 			},
 		}
 

@@ -1,5 +1,5 @@
 {
-  "description": "Example volume plugin for Docker",
+  "description": "Volume plugin for Docker",
   "documentation": "https://docs.docker.com/engine/extend/plugins/",
   "entrypoint": [
     "/example-docker-volume-plugin"
