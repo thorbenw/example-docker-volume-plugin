@@ -47,7 +47,7 @@
   },
   "interface": {
     "types": ["docker.volumedriver/1.0"],
-    "socket": "example.sock"
+    "socket": "plugin.sock"
   },
   "linux": {
     "capabilities": ["CAP_SYS_ADMIN"]

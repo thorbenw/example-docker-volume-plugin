@@ -307,7 +307,7 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 		return EXIT_CODE_ERROR
 	}
 
-	if err := handler.ServeUnix("example", gid); err != nil {
+	if err := handler.ServeUnix("plugin", gid); err != nil {
 		logger.Error(fmt.Sprintf("Calling %T.ServeUnix() failed.", handler), "err", err)
 		return EXIT_CODE_ERROR
 	}
