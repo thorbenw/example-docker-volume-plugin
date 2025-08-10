@@ -137,7 +137,7 @@ int shutdown()
 
 int main(int argc, char *argv[])
 {
-    char* bin = "examplemount";
+    char* bin = "testVolumeProcess";
     if (argc > 0) {
         bin = argv[0];
     } else {

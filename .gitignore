@@ -1,6 +1,6 @@
 **/.vscode
 **/.vs
-**/examplemount
 **/ignoresignal
+testVolumeProcess/testVolumeProcess
 rootfs
 *.tgz
