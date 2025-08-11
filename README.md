@@ -1,4 +1,4 @@
-Example Docker Volume Plugin
+Docker Volume Plugin
 ============================
 
 This is another example driver like others present on
@@ -14,18 +14,27 @@ and others.
 # Basic features
 - Version 2.0 Docker plugin
 - No 3rd party package dependencies
-- Supports volume processes, i.e. for each volume, a process can be maintained
-  (e.g. started on volume creation, restarted on crash and terminated on volume
-  removal.)
+- Supports "volume processes" (see below)
 
 # Usage
 
+## Volume Processes
+For each volume, a process can be maintained, i.e started on volume creation,
+optionally restarted on crash and terminated on volume removal.
+
+Included is a command line tool `testVolumeProcess` that just monitors the mount
+point folder and emits all events to the console. However, so far the plugin has
+been successfully tested with `s3fs`, v1.94.
+
+Albeit being optional, __not__ using a process for each volume simply doesn't
+make much sense.
+
 ## Options
 There are different kinds of options that must be distinguished, some of which
-also can be specified on different levels. The _plugin level_ comprises of command
-line options and environment variables as the 'highest' level. The _volume
-level_, coming in charge on volume creation, is the 'lower' level, which for
-most occasions takes precedence over the plugin level.
+also can be specified on different levels. The _plugin level_ comprises of
+command line options and environment variables as the 'highest' level. The
+_volume level_, coming in charge on volume creation, is the 'lower' level, which
+for most occasions takes precedence over the plugin level.
 
 ### Plugin Options
 Options for a plugin that control plugin (and therefore driver) behaviour. To

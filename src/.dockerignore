@@ -1,5 +1,5 @@
 .dockerignore
 Dockerfile
-examplemount/examplemount
+testVolumeProcess/testVolumeProcess
 **/*_test.go
 **/*.ods

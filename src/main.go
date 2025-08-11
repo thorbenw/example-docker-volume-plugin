@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/docker/go-plugins-helpers/volume"
-	"github.com/thorbenw/example-docker-volume-plugin/metric"
-	"github.com/thorbenw/example-docker-volume-plugin/mount"
-	"github.com/thorbenw/example-docker-volume-plugin/proc"
-	"github.com/thorbenw/example-docker-volume-plugin/utils"
+	"github.com/thorbenw/docker-volume-plugin/metric"
+	"github.com/thorbenw/docker-volume-plugin/mount"
+	"github.com/thorbenw/docker-volume-plugin/proc"
+	"github.com/thorbenw/docker-volume-plugin/utils"
 	"golang.org/x/exp/maps"
 )
 
@@ -247,10 +247,10 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &logopt))
-	logger.Info("Starting the Example Docker Volume Plugin.", "version", version, "args", args)
+	logger.Info("Starting Docker Volume Plugin.", "version", version, "args", args)
 	proc.Logger = logger
 
-	driver, err := exampleDriver_New(*propagatedMount, *logger)
+	driver, err := pluginDriver_New(*propagatedMount, *logger)
 	if err == nil {
 		if strings.TrimSpace(*volumeProcessBinary) != "" {
 			if binaryPath, err := exec.LookPath(*volumeProcessBinary); err != nil {
@@ -307,7 +307,7 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 		return EXIT_CODE_ERROR
 	}
 
-	if err := handler.ServeUnix("example", gid); err != nil {
+	if err := handler.ServeUnix("plugin", gid); err != nil {
 		logger.Error(fmt.Sprintf("Calling %T.ServeUnix() failed.", handler), "err", err)
 		return EXIT_CODE_ERROR
 	}

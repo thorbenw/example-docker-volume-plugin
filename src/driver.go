@@ -15,10 +15,10 @@ import (
 	"time"
 
 	"github.com/docker/go-plugins-helpers/volume"
-	"github.com/thorbenw/example-docker-volume-plugin/metric"
-	"github.com/thorbenw/example-docker-volume-plugin/mount"
-	"github.com/thorbenw/example-docker-volume-plugin/proc"
-	"github.com/thorbenw/example-docker-volume-plugin/utils"
+	"github.com/thorbenw/docker-volume-plugin/metric"
+	"github.com/thorbenw/docker-volume-plugin/mount"
+	"github.com/thorbenw/docker-volume-plugin/proc"
+	"github.com/thorbenw/docker-volume-plugin/utils"
 )
 
 const (
@@ -41,21 +41,21 @@ var (
 type GetVolumeProcess func() (*exec.Cmd, *proc.Options, *mount.Options)
 type SetVolumeProcessOptions func(*exec.Cmd, *proc.Options, *mount.Options, string) error
 
-type exampleDriverMount struct {
+type pluginDriverMount struct {
 	ReferenceCount int
 }
 
-type exampleDriverVolume struct {
+type pluginDriverVolume struct {
 	BasePath   string
 	Path       string
 	mountPoint string
 	CreatedAt  time.Time
-	Mounts     *map[string]exampleDriverMount
+	Mounts     *map[string]pluginDriverMount
 	Options    *map[string]string
 	Puid       string
 }
 
-func (v *exampleDriverVolume) MountPoint() string {
+func (v *pluginDriverVolume) MountPoint() string {
 	if len(v.mountPoint) < 1 {
 		v.mountPoint = filepath.Join(v.BasePath, v.Path)
 	}
@@ -63,7 +63,7 @@ func (v *exampleDriverVolume) MountPoint() string {
 	return v.mountPoint
 }
 
-func (v *exampleDriverVolume) SetupProcess(d *exampleDriver) error {
+func (v *pluginDriverVolume) SetupProcess(d *pluginDriver) error {
 	if strings.TrimSpace(v.Puid) == "" && d.GetVolumeProcess != nil {
 		// Create and detach process
 
@@ -171,10 +171,10 @@ func (v *exampleDriverVolume) SetupProcess(d *exampleDriver) error {
 	return nil
 }
 
-type exampleDriver struct {
+type pluginDriver struct {
 	PropagatedMount string
 	slog.Logger
-	Volumes map[string]exampleDriverVolume
+	Volumes map[string]pluginDriverVolume
 	*sync.Mutex
 	ControlFile *os.File
 	GetVolumeProcess
@@ -183,11 +183,11 @@ type exampleDriver struct {
 	VolumeProcessRecoveryRateLimit *metric.MetricRateLimit
 }
 
-func exampleDriver_New(propagatedMount string, logger slog.Logger) (*exampleDriver, error) {
-	return exampleDriver_NewWithVolumeProcess(propagatedMount, logger, nil, nil, proc.RecoveryModeIgnore, nil)
+func pluginDriver_New(propagatedMount string, logger slog.Logger) (*pluginDriver, error) {
+	return pluginDriver_NewWithVolumeProcess(propagatedMount, logger, nil, nil, proc.RecoveryModeIgnore, nil)
 }
 
-func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logger, getVolumeProcess GetVolumeProcess, setVolumeProcessOptions SetVolumeProcessOptions, recoveryMode proc.RecoveryMode, recoveryRateLimit *metric.MetricRateLimit) (*exampleDriver, error) {
+func pluginDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logger, getVolumeProcess GetVolumeProcess, setVolumeProcessOptions SetVolumeProcessOptions, recoveryMode proc.RecoveryMode, recoveryRateLimit *metric.MetricRateLimit) (*pluginDriver, error) {
 	if fileInfo, err := os.Lstat(propagatedMount); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			if err := os.MkdirAll(propagatedMount, os.ModeDir); err != nil {
@@ -208,13 +208,13 @@ func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logg
 		return nil, err
 	}
 
-	volumes, err := exampleDriver_Load(*controlFile)
+	volumes, err := pluginDriver_Load(*controlFile)
 	if err != nil {
 		controlFile.Close()
 		return nil, err
 	}
 
-	d := &exampleDriver{
+	d := &pluginDriver{
 		PropagatedMount: propagatedMount,
 		Logger:          logger,
 		//Volumes:               volumes,
@@ -246,7 +246,7 @@ func exampleDriver_NewWithVolumeProcess(propagatedMount string, logger slog.Logg
 	return d, nil
 }
 
-func exampleDriver_Load(file os.File) (data map[string]exampleDriverVolume, err error) {
+func pluginDriver_Load(file os.File) (data map[string]pluginDriverVolume, err error) {
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
@@ -257,7 +257,7 @@ func exampleDriver_Load(file os.File) (data map[string]exampleDriverVolume, err 
 	}
 
 	if len(bytes) < 1 {
-		return map[string]exampleDriverVolume{}, nil
+		return map[string]pluginDriverVolume{}, nil
 	}
 	if err := json.Unmarshal(bytes, &data); err != nil {
 		return nil, err
@@ -266,7 +266,7 @@ func exampleDriver_Load(file os.File) (data map[string]exampleDriverVolume, err 
 	return
 }
 
-func exampleDriver_Save(file os.File, data map[string]exampleDriverVolume) error {
+func pluginDriver_Save(file os.File, data map[string]pluginDriverVolume) error {
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
@@ -287,7 +287,7 @@ func exampleDriver_Save(file os.File, data map[string]exampleDriverVolume) error
 	return nil
 }
 
-func (d exampleDriver) Tee(err error, args ...any) error {
+func (d pluginDriver) Tee(err error, args ...any) error {
 	args = append([]any{"err", fmt.Sprintf("%#v", err)}, args...)
 
 	d.Logger.Error(err.Error(), args...)
@@ -295,7 +295,7 @@ func (d exampleDriver) Tee(err error, args ...any) error {
 	return err
 }
 
-func (d exampleDriver) Get(req *volume.GetRequest) (*volume.GetResponse, error) {
+func (d pluginDriver) Get(req *volume.GetRequest) (*volume.GetResponse, error) {
 	d.Logger.Debug("Get() has been called.", "req", req)
 
 	if vol, ok := d.Volumes[req.Name]; !ok {
@@ -306,7 +306,7 @@ func (d exampleDriver) Get(req *volume.GetRequest) (*volume.GetResponse, error) 
 				Name:       req.Name,
 				Mountpoint: vol.MountPoint(),
 				CreatedAt:  vol.CreatedAt.Format(time.RFC3339),
-				//Status: map[string]slog.Attr{"example":"value"},
+				//Status: map[string]slog.Attr{"key":"value"},
 			},
 		}
 
@@ -315,7 +315,7 @@ func (d exampleDriver) Get(req *volume.GetRequest) (*volume.GetResponse, error) 
 	}
 }
 
-func (d exampleDriver) Create(req *volume.CreateRequest) error {
+func (d pluginDriver) Create(req *volume.CreateRequest) error {
 	d.Logger.Debug("Create() has been called.", "req", req)
 
 	if _, ok := d.Volumes[req.Name]; ok {
@@ -338,11 +338,11 @@ func (d exampleDriver) Create(req *volume.CreateRequest) error {
 		return d.Tee(fmt.Errorf("path [%s] already exists", volumePathAbs))
 	}
 
-	res := exampleDriverVolume{
+	res := pluginDriverVolume{
 		BasePath:  d.PropagatedMount,
 		Path:      volumePathRel,
 		CreatedAt: time.Now(),
-		Mounts:    &map[string]exampleDriverMount{},
+		Mounts:    &map[string]pluginDriverMount{},
 		Options:   &req.Options,
 	}
 
@@ -352,7 +352,7 @@ func (d exampleDriver) Create(req *volume.CreateRequest) error {
 
 	d.Volumes[req.Name] = res
 
-	if err := exampleDriver_Save(*d.ControlFile, d.Volumes); err != nil {
+	if err := pluginDriver_Save(*d.ControlFile, d.Volumes); err != nil {
 		return d.Tee(err)
 	}
 
@@ -360,7 +360,7 @@ func (d exampleDriver) Create(req *volume.CreateRequest) error {
 	return nil
 }
 
-func (d exampleDriver) Remove(req *volume.RemoveRequest) error {
+func (d pluginDriver) Remove(req *volume.RemoveRequest) error {
 	d.Logger.Debug("Remove() has been called.", "req", req)
 
 	if vol, ok := d.Volumes[req.Name]; !ok {
@@ -385,7 +385,7 @@ func (d exampleDriver) Remove(req *volume.RemoveRequest) error {
 		}
 		delete(d.Volumes, req.Name)
 
-		if err := exampleDriver_Save(*d.ControlFile, d.Volumes); err != nil {
+		if err := pluginDriver_Save(*d.ControlFile, d.Volumes); err != nil {
 			return d.Tee(err)
 		}
 	}
@@ -394,7 +394,7 @@ func (d exampleDriver) Remove(req *volume.RemoveRequest) error {
 	return nil
 }
 
-func (d exampleDriver) List() (*volume.ListResponse, error) {
+func (d pluginDriver) List() (*volume.ListResponse, error) {
 	d.Logger.Debug("List() has been called.")
 
 	res := volume.ListResponse{Volumes: []*volume.Volume{}}
@@ -406,7 +406,7 @@ func (d exampleDriver) List() (*volume.ListResponse, error) {
 	return &res, nil
 }
 
-func (d exampleDriver) Capabilities() *volume.CapabilitiesResponse {
+func (d pluginDriver) Capabilities() *volume.CapabilitiesResponse {
 	d.Logger.Debug("Capabilities() has been called.")
 
 	res := volume.CapabilitiesResponse{
@@ -417,7 +417,7 @@ func (d exampleDriver) Capabilities() *volume.CapabilitiesResponse {
 	return &res
 }
 
-func (d exampleDriver) Mount(req *volume.MountRequest) (*volume.MountResponse, error) {
+func (d pluginDriver) Mount(req *volume.MountRequest) (*volume.MountResponse, error) {
 	d.Logger.Debug("Mount() has been called.", "req", req)
 
 	if vol, ok := d.Volumes[req.Name]; !ok {
@@ -432,15 +432,15 @@ func (d exampleDriver) Mount(req *volume.MountRequest) (*volume.MountResponse, e
 		mounts := *vol.Mounts
 		if mount, ok := mounts[req.ID]; ok {
 			mount.ReferenceCount++
-			mounts[req.ID] = exampleDriverMount{ReferenceCount: mount.ReferenceCount}
+			mounts[req.ID] = pluginDriverMount{ReferenceCount: mount.ReferenceCount}
 
 			d.Logger.Debug(fmt.Sprintf("Mount() successfully incremented reference count of the mount for ID [%s] in volume [%s] to %d.", req.ID, req.Name, mount.ReferenceCount))
 		} else {
-			mounts[req.ID] = exampleDriverMount{ReferenceCount: 1}
+			mounts[req.ID] = pluginDriverMount{ReferenceCount: 1}
 			d.Logger.Debug(fmt.Sprintf("Mount() successfully registered a mount for ID [%s] in volume [%s].", req.ID, req.Name), "res", res)
 		}
 
-		if err := exampleDriver_Save(*d.ControlFile, d.Volumes); err != nil {
+		if err := pluginDriver_Save(*d.ControlFile, d.Volumes); err != nil {
 			return nil, d.Tee(err)
 		}
 
@@ -448,7 +448,7 @@ func (d exampleDriver) Mount(req *volume.MountRequest) (*volume.MountResponse, e
 	}
 }
 
-func (d exampleDriver) Unmount(req *volume.UnmountRequest) error {
+func (d pluginDriver) Unmount(req *volume.UnmountRequest) error {
 	d.Logger.Debug("Unmount() has been called.", "req", req)
 
 	if vol, ok := d.Volumes[req.Name]; !ok {
@@ -464,7 +464,7 @@ func (d exampleDriver) Unmount(req *volume.UnmountRequest) error {
 
 			if mount.ReferenceCount > 0 {
 				mount.ReferenceCount--
-				mounts[req.ID] = exampleDriverMount{ReferenceCount: mount.ReferenceCount}
+				mounts[req.ID] = pluginDriverMount{ReferenceCount: mount.ReferenceCount}
 			}
 			if mount.ReferenceCount > 0 {
 				d.Logger.Debug(fmt.Sprintf("Unmount() successfully decremented reference count of the mount for ID [%s] in volume [%s] to %d.", req.ID, req.Name, mount.ReferenceCount))
@@ -473,7 +473,7 @@ func (d exampleDriver) Unmount(req *volume.UnmountRequest) error {
 				d.Logger.Debug(fmt.Sprintf("Unmount() successfully unregistered the mount for ID [%s] in volume [%s].", req.ID, req.Name))
 			}
 
-			if err := exampleDriver_Save(*d.ControlFile, d.Volumes); err != nil {
+			if err := pluginDriver_Save(*d.ControlFile, d.Volumes); err != nil {
 				return d.Tee(err)
 			}
 		}
@@ -482,7 +482,7 @@ func (d exampleDriver) Unmount(req *volume.UnmountRequest) error {
 	}
 }
 
-func (d exampleDriver) Path(req *volume.PathRequest) (*volume.PathResponse, error) {
+func (d pluginDriver) Path(req *volume.PathRequest) (*volume.PathResponse, error) {
 	d.Logger.Debug("Path() has been called.", "req", req)
 
 	if vol, ok := d.Volumes[req.Name]; !ok {

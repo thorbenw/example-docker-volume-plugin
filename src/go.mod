@@ -1,4 +1,4 @@
-module github.com/thorbenw/example-docker-volume-plugin
+module github.com/thorbenw/docker-volume-plugin
 
 go 1.23.0
 

@@ -1,8 +1,8 @@
 {
-  "description": "Example volume plugin for Docker",
-  "documentation": "https://docs.docker.com/engine/extend/plugins/",
+  "description": "Volume plugin for Docker",
+  "documentation": "https://github.com/thorbenw/docker-volume-plugin",
   "entrypoint": [
-    "/example-docker-volume-plugin"
+    "/docker-volume-plugin"
   ],
   "env": [
     {
@@ -68,7 +68,7 @@
   },
   "interface": {
     "types": ["docker.volumedriver/1.0"],
-    "socket": "example.sock"
+    "socket": "plugin.sock"
   },
   "linux": {
     "capabilities": ["CAP_SYS_ADMIN"],
