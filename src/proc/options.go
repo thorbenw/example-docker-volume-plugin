@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/thorbenw/example-docker-volume-plugin/utils"
+	"github.com/thorbenw/docker-volume-plugin/utils"
 )
 
 // region Package globals

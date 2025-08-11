@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/docker/go-plugins-helpers/volume"
-	"github.com/thorbenw/example-docker-volume-plugin/mount"
-	"github.com/thorbenw/example-docker-volume-plugin/proc"
-	"github.com/thorbenw/example-docker-volume-plugin/utils"
+	"github.com/thorbenw/docker-volume-plugin/mount"
+	"github.com/thorbenw/docker-volume-plugin/proc"
+	"github.com/thorbenw/docker-volume-plugin/utils"
 	"gotest.tools/assert"
 )
 

@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/docker/go-plugins-helpers/volume"
-	"github.com/thorbenw/example-docker-volume-plugin/metric"
-	"github.com/thorbenw/example-docker-volume-plugin/mount"
-	"github.com/thorbenw/example-docker-volume-plugin/proc"
-	"github.com/thorbenw/example-docker-volume-plugin/utils"
+	"github.com/thorbenw/docker-volume-plugin/metric"
+	"github.com/thorbenw/docker-volume-plugin/mount"
+	"github.com/thorbenw/docker-volume-plugin/proc"
+	"github.com/thorbenw/docker-volume-plugin/utils"
 	"golang.org/x/exp/maps"
 )
 
@@ -247,7 +247,7 @@ func entryPoint(arg0 string, args []string) (exitCode int) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &logopt))
-	logger.Info("Starting the Example Docker Volume Plugin.", "version", version, "args", args)
+	logger.Info("Starting Docker Volume Plugin.", "version", version, "args", args)
 	proc.Logger = logger
 
 	driver, err := pluginDriver_New(*propagatedMount, *logger)

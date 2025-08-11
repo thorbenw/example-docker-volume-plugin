@@ -22,9 +22,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/thorbenw/example-docker-volume-plugin/metric"
-	"github.com/thorbenw/example-docker-volume-plugin/semver"
-	"github.com/thorbenw/example-docker-volume-plugin/utils"
+	"github.com/thorbenw/docker-volume-plugin/metric"
+	"github.com/thorbenw/docker-volume-plugin/semver"
+	"github.com/thorbenw/docker-volume-plugin/utils"
 )
 
 // region noCopy struct

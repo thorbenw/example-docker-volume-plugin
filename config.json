@@ -1,8 +1,8 @@
 {
   "description": "Volume plugin for Docker",
-  "documentation": "https://docs.docker.com/engine/extend/plugins/",
+  "documentation": "https://github.com/thorbenw/docker-volume-plugin",
   "entrypoint": [
-    "/example-docker-volume-plugin"
+    "/docker-volume-plugin"
   ],
   "env": [
     {
