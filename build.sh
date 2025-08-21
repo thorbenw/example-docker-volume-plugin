@@ -8,7 +8,16 @@
 #
 #  path     The path to build to.
 #
-#           If it ends with `.tgz`, a (compressed) tarball is created.
+#           If the path ends with `.tgz`, a (compressed) tarball is created.
+#
+#           If the path ends with a colon (`:`) and also has at least one valid
+#           character before, a Docker image is built.
+#           All colon characters are stripped from the path, the version
+#           information (see below) is appended to the path, separated by a
+#           sinlge colon, and the resulting expression is then used as the image
+#           tag.
+#           Make sure to provide proper version information because the default
+#           values don't qualify as a valid tag.
 #
 #           Default: ./rootfs
 #
@@ -41,7 +50,20 @@ image_tag="dev"
 
 if (echo "$build_path" | grep -qi '.tgz$'); then
     build_target="tgz"
+else
+    if (echo "$build_path" | grep -qi '.\+:$'); then
+        image_name="$(echo "$build_path" | sed 's/://')"
+        build_target="image"
+    fi
 fi
+
+version_string=${2:-"(build)"}
+version_file=${2:-"./config.ver"}
+if [ -f "$version_file" ]; then
+    echo "Loading version information from file [$version_file]."
+    version_string=$(cat "$version_file")
+fi
+echo "Build version is [$version_string]."
 
 case $build_target in
     tgz)
@@ -68,19 +90,23 @@ case $build_target in
             fi
         fi
     ;;
+    image)
+        echo "Building to image."
+        if (echo "$image_name" | grep '[^A-Za-z0-9.-]\+' >/dev/null); then
+            >&2 echo "Invalid build path [$image_name] cannot be used as part of an image tag. Provide a proper name (i.e. [A-Za-z0-9.-])."
+            exit 2
+        fi
+        if (echo "$version_string" | grep '[^A-Za-z0-9.-]\+' >/dev/null); then
+            >&2 echo "Invalid version [$version_string] cannot be used as part of an image tag. Provide proper version information (i.e. no build info)."
+            exit 3
+        fi
+        image_tag="$version_string"
+    ;;
     *)
         >&2 echo "Build target [$build_target] is not (yet?) supported."
         exit 127
     ;;
 esac
-
-version_string=${2:-"(build)"}
-version_file=${2:-"./config.ver"}
-if [ -f "$version_file" ]; then
-    echo "Loading version information from file [$version_file]."
-    version_string=$(cat "$version_file")
-fi
-echo "Build version is [$version_string]."
 
 if command -v go >/dev/null; then
     echo "Checking [go.sum]."
@@ -122,6 +148,11 @@ case $build_target in
         echo "Exporting to root file system [$build_path]."
         mkdir -p "$build_path"
         docker export "$id" | tar -x -C "$build_path" || exit $?
+    ;;
+    image)
+        echo "Stopping container [$id] and retaining image."
+        docker rm -vf "$id" || exit $?
+        exit 0
     ;;
     *)
         >&2 echo "Build target [$build_target] is not supported."
