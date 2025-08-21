@@ -35,31 +35,44 @@
 #    temporary image and container to generate the $path folder or tarball from.
 
 build_path=${1:-"./rootfs"}
-echo "$build_path" | grep -qi '.tgz$' && build_tgz=true
+build_target="rootfs"
+image_name="rootfsimage"
+image_tag="dev"
 
-if [ $build_tgz ]; then
-    echo "Building to tarball [$build_path]."
-    if [ -f "$build_path" ]; then
-        echo "Erasing existing tarball [$build_path]."
-        rm -rf "$build_path" 2>/dev/null
-        res=$?
-        if [ $res -gt 0 ]; then
-            echo "Failed to remove tarball. Aborting."
-            exit $res
-        fi
-    fi
-else
-    echo "Building to folder [$build_path]."
-    if [ -d "$build_path" ]; then
-        echo "Erasing existing root file system [$build_path]."
-        rm -rf "$build_path" 2>/dev/null
-        res=$?
-        if [ $res -gt 0 ]; then
-            echo "Failed to remove root file system. Aborting."
-            exit $res
-        fi
-    fi
+if (echo "$build_path" | grep -qi '.tgz$'); then
+    build_target="tgz"
 fi
+
+case $build_target in
+    tgz)
+        echo "Building to tarball [$build_path]."
+        if [ -f "$build_path" ]; then
+            echo "Erasing existing tarball [$build_path]."
+            rm -rf "$build_path" 2>/dev/null
+            res=$?
+            if [ $res -gt 0 ]; then
+                echo "Failed to remove tarball. Aborting."
+                exit $res
+            fi
+        fi
+    ;;
+    rootfs)
+        echo "Building to folder [$build_path]."
+        if [ -d "$build_path" ]; then
+            echo "Erasing existing root file system [$build_path]."
+            rm -rf "$build_path" 2>/dev/null
+            res=$?
+            if [ $res -gt 0 ]; then
+                echo "Failed to remove root file system. Aborting."
+                exit $res
+            fi
+        fi
+    ;;
+    *)
+        >&2 echo "Build target [$build_target] is not (yet?) supported."
+        exit 127
+    ;;
+esac
 
 version_string=${2:-"(build)"}
 version_file=${2:-"./config.ver"}
@@ -67,7 +80,7 @@ if [ -f "$version_file" ]; then
     echo "Loading version information from file [$version_file]."
     version_string=$(cat "$version_file")
 fi
-echo "Building version [$version_string]."
+echo "Build version is [$version_string]."
 
 if command -v go >/dev/null; then
     echo "Checking [go.sum]."
@@ -89,20 +102,31 @@ else
     echo "Cannot check go.sum due to go being absent. Errors may occur during build!"
 fi
 
-docker build -t rootfsimage:dev --build-arg MODULE_VERSION="$version_string" --progress plain ./src || exit $?
-id=$(docker create rootfsimage:dev true)
+image_name="$image_name:$image_tag"
+unset image_tag
+
+echo "Starting build to image [$image_name]."
+docker build -t "$image_name" --build-arg MODULE_VERSION="$version_string" --progress plain ./src || exit $?
+id=$(docker create "$image_name" true)
 if [ -z "$id" ]; then
     echo "Failed to create container or to get it's id."
     exit 127
 fi
 
-if [ $build_tgz ]; then
-    echo "Exporting to tarball [$build_path]."
-    docker export "$id" | gzip -c9 > "$build_path" || exit $?
-else
-    echo "Exporting to root file system [$build_path]."
-    mkdir -p "$build_path"
-    docker export "$id" | tar -x -C "$build_path" || exit $?
-fi
+case $build_target in
+    tgz)
+        echo "Exporting to tarball [$build_path]."
+        docker export "$id" | gzip -c9 > "$build_path" || exit $?
+    ;;
+    rootfs)
+        echo "Exporting to root file system [$build_path]."
+        mkdir -p "$build_path"
+        docker export "$id" | tar -x -C "$build_path" || exit $?
+    ;;
+    *)
+        >&2 echo "Build target [$build_target] is not supported."
+    ;;
+esac
+
 docker rm -vf "$id" || exit $?
-docker rmi rootfsimage:dev || exit $?
+docker rmi "$image_name" || exit $?
