@@ -92,8 +92,8 @@ case $build_target in
     ;;
     image)
         echo "Building to image."
-        if (echo "$image_name" | grep '[^A-Za-z0-9.-]\+' >/dev/null); then
-            >&2 echo "Invalid build path [$image_name] cannot be used as part of an image tag. Provide a proper name (i.e. [A-Za-z0-9.-])."
+        if (echo "$image_name" | grep '[^A-Za-z0-9/.\-]\+' >/dev/null); then
+            >&2 echo "Invalid build path [$image_name] cannot be used as part of an image tag. Provide a proper name (i.e. [A-Za-z0-9/.-])."
             exit 2
         fi
         if (echo "$version_string" | grep '[^A-Za-z0-9.-]\+' >/dev/null); then
